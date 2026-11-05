@@ -12,13 +12,15 @@ describe("normalizeHref", () => {
     ["/guide/intro.md", undefined, "/guide/intro/"],
     ["/guide/index.md", undefined, "/guide/"],
     ["intro.md#setup", "/guide/start/", "/guide/start/intro/#setup"],
+    ["./intro", "/guide/start.md", "/guide/intro/"],
+    ["../api.md", "/guide/deep/page.md", "/guide/api/"],
     ["../api.md?tab=1#x", "/guide/start/", "/guide/api/?tab=1#x"],
     ["/files/data.json", undefined, "/files/data.json"],
     ["#anchor", "/guide/", "#anchor"],
     ["https://example.com/a.md", undefined, "https://example.com/a.md"],
     ["mailto:hi@example.com", undefined, "mailto:hi@example.com"],
-  ])("%s from %s", (href, currentUrl, expected) => {
-    expect(normalizeHref(href, currentUrl)).toBe(expected);
+  ])("%s from %s", (href, from, expected) => {
+    expect(normalizeHref(href, from)).toBe(expected);
   });
 });
 

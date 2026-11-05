@@ -21,10 +21,10 @@ import {
   isSpecialLang,
   type ShikiTransformer,
 } from "shiki";
-import type { ResolvedFoundatioThemeOptions } from "./types.ts";
+import type { ResolvedLumePressOptions } from "./types.ts";
 
 type CodeHighlightOptions = Exclude<
-  ResolvedFoundatioThemeOptions["codeHighlight"],
+  ResolvedLumePressOptions["codeHighlight"],
   false
 >;
 
@@ -91,7 +91,7 @@ function resolveLanguage(language: string, options: CodeHighlightOptions) {
  * markdown-it `highlight` function. Returns `""` when highlighting is off so
  * markdown-it falls back to escaped `<pre><code>`.
  */
-export function createHighlight(theme: ResolvedFoundatioThemeOptions) {
+export function createHighlight(theme: ResolvedLumePressOptions) {
   const options = theme.codeHighlight;
   if (!options) {
     return undefined;
@@ -128,7 +128,7 @@ export function createHighlight(theme: ResolvedFoundatioThemeOptions) {
       themes: options.themes,
       defaultColor: false,
       meta: { __raw: attrs },
-      transformers,
+      transformers: [...transformers, ...options.transformers],
       colorReplacements,
     });
   };

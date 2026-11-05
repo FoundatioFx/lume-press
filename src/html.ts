@@ -47,11 +47,34 @@ export function stripHeaderAnchors(html: string): string {
   );
 }
 
-/** The headings in rendered page HTML, in document order. */
+/** Heading children VitePress leaves out of outline titles: badges, anchors, and footnote references. */
+const outlineIgnoredPattern =
+  /<([a-z][\w-]*)\b[^>]*\bclass="[^"]*\b(?:VPBadge|header-anchor|footnote-ref|ignore-header)\b[^"]*"[^>]*>[\s\S]*?<\/\1>/gi;
+
+const badgePattern =
+  /<span\b[^>]*\bclass="VPBadge\b[^"]*"[^>]*>[\s\S]*?<\/span>/g;
+
+/**
+ * A heading as VitePress's `[[toc]]` shows it: text only, except for inline
+ * HTML written in the markdown (in practice, badges). Markdown formatting
+ * like `code` is dropped.
+ */
+function tocHtml(html: string): string {
+  let result = "";
+  let last = 0;
+  for (const badge of html.matchAll(badgePattern)) {
+    result += html.slice(last, badge.index).replace(/<[^>]+>/g, "") + badge[0];
+    last = badge.index + badge[0].length;
+  }
+  return (result + html.slice(last).replace(/<[^>]+>/g, "")).trim();
+}
+
+/** The headings in rendered page HTML, in document order, titled like VitePress's outline. */
 export function extractHeadings(html: string): Heading[] {
   return [...html.matchAll(headingPattern)].map((match) => ({
     level: Number(match[1]),
     slug: decodeHtml(match[2]),
-    text: htmlToText(stripHeaderAnchors(match[3])),
+    text: htmlToText(match[3].replace(outlineIgnoredPattern, "")),
+    html: tocHtml(stripHeaderAnchors(match[3])),
   }));
 }

@@ -1,5 +1,8 @@
 import lume from "@lumeland/lume";
-import foundatio from "../src/mod.ts";
+import lumePress from "../src/mod.ts";
+
+// `vitepress-reference/.vitepress/config.ts` mirrors this configuration, so
+// both sites render these docs the same way. Keep the two in sync.
 
 const site = lume({
   location: new URL("https://theme.foundatio.dev/"),
@@ -9,12 +12,15 @@ const site = lume({
 
 site.copy("public", ".");
 
+/** Reference pages, which the Reference nav link highlights instead of Guide. */
+const reference = "(?:config|navigation|outputs|vitepress-parity)";
+
 site.use(
-  foundatio({
-    title: "Foundatio Theme",
-    description: "Dogfood site for the Foundatio Lume theme",
+  lumePress({
+    title: "LumePress",
+    description: "The VitePress default theme, for Lume",
     brand: {
-      label: "Theme",
+      label: "LumePress",
       logoLight:
         "https://raw.githubusercontent.com/FoundatioFx/Foundatio/main/media/foundatio.svg",
       logoDark:
@@ -24,19 +30,39 @@ site.use(
     nav: [
       {
         text: "Guide",
-        link: "/guide/getting-started",
-        activeMatch: "^/guide/",
+        link: "/guide/what-is-lumepress",
+        activeMatch: `^/guide/(?!${reference}\\b)`,
       },
       {
         text: "Reference",
-        items: [
-          { text: "Components", link: "/guide/components" },
-          { text: "Theme Demo", link: "/guide/demo" },
-        ],
+        link: "/guide/config",
+        activeMatch: `^/guide/${reference}\\b`,
       },
       {
-        text: "GitHub",
-        link: "https://github.com/FoundatioFx/lume-theme",
+        text: "Resources",
+        items: [
+          {
+            text: "Built with",
+            items: [
+              { text: "Lume", link: "https://lume.land/" },
+              { text: "VitePress", link: "https://vitepress.dev/" },
+              { text: "Shiki", link: "https://shiki.style/" },
+            ],
+          },
+          {
+            text: "Project",
+            items: [
+              {
+                text: "Releases",
+                link: "https://github.com/FoundatioFx/lume-theme/releases",
+              },
+              {
+                text: "Issues",
+                link: "https://github.com/FoundatioFx/lume-theme/issues",
+              },
+            ],
+          },
+        ],
       },
     ],
     social: [
@@ -47,7 +73,7 @@ site.use(
       },
       {
         label: "npm",
-        link: "https://www.npmjs.com/package/@foundatiofx/lume-theme",
+        link: "https://www.npmjs.com/package/@foundatiofx/lume-press",
         icon: "npm",
       },
     ],
@@ -59,6 +85,19 @@ site.use(
       pattern: "https://github.com/FoundatioFx/lume-theme/edit/main/docs/:path",
     },
     lastUpdated: { git: true },
+    codeHighlight: {
+      transformers: [
+        {
+          // Examples write `[!!code` and `@@include` so they aren't applied;
+          // this turns them back into the syntax being shown.
+          name: "docs:unescape-examples",
+          postprocess: (html) =>
+            html
+              .replaceAll("[!!code", "[!code")
+              .replaceAll("@@include", "@include"),
+        },
+      ],
+    },
   }),
 );
 

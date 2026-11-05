@@ -1,11 +1,11 @@
 import type { MetaData } from "@lumeland/plugin-metas";
 import { firstHeading } from "./pages.ts";
-import type { DocsData, ResolvedFoundatioThemeOptions } from "./types.ts";
+import type { DocsData, ResolvedLumePressOptions } from "./types.ts";
 
 /** The page `<title>`, like VitePress's `createTitle` with `titleTemplate`. */
 export function pageTitle(
   data: DocsData,
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
 ): string {
   const title = data.title ?? firstHeading(data) ?? theme.title;
   const template = data.titleTemplate ?? theme.titleTemplate;
@@ -23,7 +23,7 @@ export function pageTitle(
 /** Values for Lume's metas plugin, which writes the Open Graph and Twitter tags. */
 export function pageMetas(
   data: DocsData,
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
 ): Partial<MetaData> {
   return {
     site: theme.title,

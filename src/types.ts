@@ -1,17 +1,22 @@
 import type { Options as CheckUrlsOptions } from "@lumeland/plugin-check-urls";
 import type { MetaData } from "@lumeland/plugin-metas";
 import type { Options as SitemapOptions } from "@lumeland/plugin-sitemap";
+import type { ShikiTransformer } from "shiki";
 import type { ThemePage } from "./lume.ts";
 
-export type FoundatioThemeOptions = {
+/** Options for `lumePress()`. Each is described at https://theme.foundatio.dev/guide/config/. */
+export type LumePressOptions = {
+  /** The site title, shown in the nav bar and appended to page titles. */
   title: string;
+  /** The default meta description. */
   description: string;
   /** Default page language. @default "en-US" */
   lang?: string;
   /** The site URL; defaults to Lume's `location` option. */
   location?: string | URL;
+  /** The path the site is served from, like `/docs/`. @default the path of `location` */
   basePath?: string;
-  /** Folder whose pages get the generated sidebar. */
+  /** Folder whose pages get the generated sidebar. @default "guide" */
   docsRoot?: string;
   /**
    * The sidebar, like VitePress's `themeConfig.sidebar`: one list of items, or
@@ -25,47 +30,74 @@ export type FoundatioThemeOptions = {
    * drops the suffix. @default true (`Page | Site`)
    */
   titleTemplate?: string | boolean;
+  /** Extra `<head>` tags for every page. */
   head?: HeadEntry[];
+  /** Options for Lume's metas plugin (Open Graph and Twitter tags). */
   metas?: Partial<MetaData>;
+  /** UI text, for translating the theme. Defaults to VitePress's English strings. */
   labels?: Partial<ThemeLabels>;
+  /** The nav bar's logo and title, the favicon, and the browser theme color. */
   brand?: {
+    /** The nav bar title. @default title */
     label?: string;
     logoLight?: string;
+    /** @default logoLight */
     logoDark?: string;
+    /** The favicon. */
     icon?: string;
+    /** @default "#3c8772" */
     themeColor?: string;
   };
+  /** The nav bar links and dropdown menus, like VitePress's `themeConfig.nav`. */
   nav?: NavLink[];
+  /** Icon links in the nav bar. */
   social?: SocialLink[];
+  /** The footer on pages without a sidebar. Both parts may contain HTML. */
   footer?: {
     message?: string;
     copyright?: string;
   };
+  /** An "Edit this page" link in the doc footer. */
   editLink?: {
     /** URL with a `:path` placeholder for the page's source path. */
     pattern: string;
+    /** @default "Edit this page" */
     text?: string;
   };
+  /** Shows when each page last changed, in the doc footer and the sitemap. */
   lastUpdated?: boolean | LastUpdatedOptions;
+  /** The default page outline. @default { level: 2, label: "On this page" } */
   outline?: OutlineOptions;
+  /** Options for Lume's sitemap plugin, or `false` to skip it. */
   sitemap?: boolean | SitemapOptions;
+  /** Options for Lume's check URLs plugin, or `false` to skip it. @default { anchors: true, throw: true } */
   checkUrls?: boolean | CheckUrlsOptions;
+  /** Shiki highlighting for code blocks, or `false` to turn it off. */
   codeHighlight?: false | CodeHighlightOptions;
   code?: {
+    /** Line numbers on every code block. @default false */
     lineNumbers?: boolean;
   };
+  /** Where snippet imports and includes read files from, or `false` to turn them off. */
   snippets?: false | SnippetOptions;
+  /** Static redirect pages, from a path to a URL. */
   redirects?: Record<string, string>;
+  /** Generate `llms.txt` and `llms-full.txt`. @default true */
   llms?: boolean;
+  /** Publish each docs page's markdown next to its HTML. @default true */
   markdownMirrors?: boolean;
+  /** Build the local search index and show the search box. @default true */
   search?: boolean;
+  /** Write the theme's styles, scripts, and fonts to `/assets/`, optionally read from `baseUrl`. @default true */
   assets?: boolean | { baseUrl?: string | URL };
+  /** A folder copied to the site root untouched. @default "pages" */
   rawPagesDir?: string | false;
+  /** Extra paths for Lume to ignore. */
   ignore?: string[];
 };
 
-export type ResolvedFoundatioThemeOptions = Required<
-  Pick<FoundatioThemeOptions, "title" | "description" | "docsRoot">
+export type ResolvedLumePressOptions = Required<
+  Pick<LumePressOptions, "title" | "description" | "docsRoot">
 > & {
   lang: string;
   location?: URL;
@@ -73,15 +105,15 @@ export type ResolvedFoundatioThemeOptions = Required<
   head: HeadEntry[];
   metas: Partial<MetaData>;
   labels: ThemeLabels;
-  brand: Required<NonNullable<FoundatioThemeOptions["brand"]>>;
+  brand: Required<NonNullable<LumePressOptions["brand"]>>;
   sidebar?: Sidebar;
   titleTemplate: string | boolean;
   nav: NavLink[];
   social: SocialLink[];
   /** CSS for the social links' Simple Icons. */
   socialIconStyles: string;
-  footer: Required<NonNullable<FoundatioThemeOptions["footer"]>>;
-  editLink?: Required<NonNullable<FoundatioThemeOptions["editLink"]>>;
+  footer: Required<NonNullable<LumePressOptions["footer"]>>;
+  editLink?: Required<NonNullable<LumePressOptions["editLink"]>>;
   lastUpdated: false | Required<LastUpdatedOptions>;
   outline: Required<OutlineOptions>;
   sitemap: false | SitemapOptions;
@@ -91,8 +123,9 @@ export type ResolvedFoundatioThemeOptions = Required<
     | {
         themes: { light: string; dark: string };
         languageAlias: Record<string, string>;
+        transformers: ShikiTransformer[];
       };
-  code: Required<NonNullable<FoundatioThemeOptions["code"]>>;
+  code: Required<NonNullable<LumePressOptions["code"]>>;
   snippets: false | Required<SnippetOptions>;
   redirects: Record<string, string>;
   llms: boolean;
@@ -123,7 +156,10 @@ export type SocialLink = {
 
 export type Heading = {
   level: number;
+  /** Plain text without badges, as the page outline shows it. */
   text: string;
+  /** The heading's HTML without its anchor link, as `[[toc]]` shows it. */
+  html: string;
   slug: string;
 };
 
@@ -294,6 +330,8 @@ export type CodeHighlightOptions = {
   };
   /** Extra language aliases, like VitePress's `markdown.languageAlias`. */
   languageAlias?: Record<string, string>;
+  /** Shiki transformers to run after the built-in ones, like VitePress's `markdown.codeTransformers`. */
+  transformers?: ShikiTransformer[];
 };
 
 /** UI text. Defaults match VitePress's English strings. */

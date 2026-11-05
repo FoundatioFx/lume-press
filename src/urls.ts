@@ -14,24 +14,23 @@ export function isDocsPath(path: string, docsRoot: string): boolean {
   return path.startsWith(`/${docsRoot}/`);
 }
 
-/** Rewrites every `href` in rendered HTML with `normalizeHref`. */
-export function normalizeInternalLinks(
-  html: string,
-  currentUrl?: string,
-): string {
+/** Rewrites every `href` in rendered HTML with `normalizeHref`; `from` is the page's source path. */
+export function normalizeInternalLinks(html: string, from?: string): string {
   return html.replace(
     /\shref="([^"]+)"/g,
     (_match, href: string) =>
-      ` href="${escapeAttribute(normalizeHref(decodeHtml(href), currentUrl))}"`,
+      ` href="${escapeAttribute(normalizeHref(decodeHtml(href), from))}"`,
   );
 }
 
 /**
  * Turns markdown links into the site's pretty URLs: `intro.md` and
- * `intro.html` become `intro/`, relative paths resolve against `currentUrl`,
- * and the query and hash are kept. External links and files are untouched.
+ * `intro.html` become `intro/`, and the query and hash are kept. Relative
+ * paths resolve against `from`: a source file like `/guide/intro.md` (as
+ * VitePress does) or a directory URL like `/guide/`. External links and
+ * files are untouched.
  */
-export function normalizeHref(href: string, currentUrl?: string): string {
+export function normalizeHref(href: string, from?: string): string {
   if (href.startsWith("#") || isExternal(href)) {
     return href;
   }
@@ -42,10 +41,10 @@ export function normalizeHref(href: string, currentUrl?: string): string {
   }
 
   const pretty = prettyPagePath(path);
-  if (!currentUrl || path.startsWith("/")) {
+  if (!from || path.startsWith("/")) {
     return `${pretty}${suffix}`;
   }
-  return `${new URL(pretty, new URL(currentUrl, "https://site.local")).pathname}${suffix}`;
+  return `${new URL(pretty, new URL(from, "https://site.local")).pathname}${suffix}`;
 }
 
 function prettyPagePath(path: string): string {

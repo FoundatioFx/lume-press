@@ -53,10 +53,15 @@ test("includes can target the content under a heading", () => {
   expect(expand("<!--@include: @/part.md#two-->").trim()).toBe("Second.");
 });
 
-test("directives inside fenced code are left alone", () => {
-  const markdown =
-    "````md\n<<< @/missing.ts\n<!--@include: @/missing.md-->\n````";
+test("snippets inside fenced code are left alone", () => {
+  const markdown = "````md\n<<< @/missing.ts\n````";
   expect(expand(markdown)).toBe(markdown);
+});
+
+test("includes expand inside fenced code too, like VitePress", () => {
+  expect(expand("```ts\n<!--@include: @/code.ts{1,1}-->\n```")).toBe(
+    "```ts\nconst before = 1;\n```",
+  );
 });
 
 test("snippets can't escape the configured roots", () => {

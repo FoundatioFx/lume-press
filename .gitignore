@@ -4,3 +4,5 @@ build/
 node_modules/
 .DS_Store
 package.tgz
+vitepress-reference/.vitepress/cache/
+vitepress-reference/.vitepress/dist/

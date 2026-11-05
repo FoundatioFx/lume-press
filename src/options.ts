@@ -1,7 +1,7 @@
 import { socialIconStyles } from "./icons.ts";
 import type {
-  FoundatioThemeOptions,
-  ResolvedFoundatioThemeOptions,
+  LumePressOptions,
+  ResolvedLumePressOptions,
   ThemeLabels,
 } from "./types.ts";
 import { normalizeDocsRoot } from "./urls.ts";
@@ -47,8 +47,8 @@ const defaultLabels: ThemeLabels = {
 };
 
 export function resolveOptions(
-  options: FoundatioThemeOptions,
-): ResolvedFoundatioThemeOptions {
+  options: LumePressOptions,
+): ResolvedLumePressOptions {
   const docsRoot = normalizeDocsRoot(options.docsRoot ?? "guide");
   const location =
     typeof options.location === "string"
@@ -122,6 +122,7 @@ export function resolveOptions(
               dark: options.codeHighlight?.themes?.dark ?? "github-dark",
             },
             languageAlias: options.codeHighlight?.languageAlias ?? {},
+            transformers: options.codeHighlight?.transformers ?? [],
           },
     code: { lineNumbers: options.code?.lineNumbers ?? false },
     snippets:

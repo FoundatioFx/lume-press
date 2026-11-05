@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ResolvedFoundatioThemeOptions } from "./types.ts";
+import type { ResolvedLumePressOptions } from "./types.ts";
 
 const assetsDir = new URL("./assets/", import.meta.url);
 
@@ -22,7 +22,7 @@ export const themeAssets: string[] = readdirSync(assetsDir, {
 
 /** Reads a theme asset from the package, or from `assets.baseUrl` when configured. */
 export async function readThemeAsset(
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
   name: string,
 ): Promise<string | Uint8Array> {
   const binary = name.endsWith(".woff2");
@@ -37,7 +37,7 @@ export async function readThemeAsset(
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(
-      `Unable to load Foundatio theme asset ${url.href}: ${response.status} ${response.statusText}`,
+      `Unable to load LumePress asset ${url.href}: ${response.status} ${response.statusText}`,
     );
   }
   return binary

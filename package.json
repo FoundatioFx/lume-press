@@ -1,9 +1,14 @@
 {
-  "name": "@foundatiofx/lume-theme",
+  "name": "@foundatiofx/lume-press",
   "version": "0.2.0",
-  "description": "A Lume theme for Foundatio technical sites.",
+  "description": "A Lume theme that renders like VitePress's default theme.",
   "keywords": [
-    "lume-theme"
+    "lume",
+    "lume-theme",
+    "lume-plugin",
+    "vitepress",
+    "docs",
+    "documentation"
   ],
   "license": "MIT",
   "repository": {
@@ -34,7 +39,11 @@
     "fmt": "vp fmt",
     "test": "vp test run",
     "prepack": "vp pack",
-    "sync:vitepress": "vpx scripts/sync-vitepress.ts"
+    "sync:vitepress": "vpx scripts/sync-vitepress.ts",
+    "vitepress:dev": "vitepress dev vitepress-reference --port 5300",
+    "vitepress:build": "vitepress build vitepress-reference",
+    "vitepress:preview": "vitepress preview vitepress-reference --port 5301",
+    "compare:vitepress": "vpx scripts/compare-vitepress.ts"
   },
   "dependencies": {
     "@iconify-json/simple-icons": "^1.2.101",
@@ -59,8 +68,12 @@
   "devDependencies": {
     "@lumeland/lume": "^4.0.1",
     "@types/node": "^24.0.0",
+    "@types/pngjs": "^6.0.5",
     "markdown-it": "^15.0.3",
     "minisearch": "^7.2.0",
+    "pixelmatch": "^8.0.0",
+    "playwright": "^1.64.1",
+    "pngjs": "^7.0.0",
     "postcss": "^8.5.32",
     "typescript": "^7.0.2",
     "vite-plus": "catalog:",

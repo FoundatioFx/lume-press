@@ -4,7 +4,7 @@ import type {
   DocsData,
   Heading,
   PageLink,
-  ResolvedFoundatioThemeOptions,
+  ResolvedLumePressOptions,
   SidebarLink,
 } from "../types.ts";
 import { normalizeHref, titleFromPath } from "../urls.ts";
@@ -20,7 +20,7 @@ export function renderDoc(options: {
   outline: OutlineSettings;
   headings: Heading[];
   hasSidebar: boolean;
-  theme: ResolvedFoundatioThemeOptions;
+  theme: ResolvedLumePressOptions;
 }): string {
   const { data, outline } = options;
   const hasAside = data.aside !== false;
@@ -60,7 +60,7 @@ export function renderLocalNav(options: {
   headings: Heading[];
   outline: OutlineSettings;
   hasSidebar: boolean;
-  theme: ResolvedFoundatioThemeOptions;
+  theme: ResolvedLumePressOptions;
 }) {
   const { headings, theme } = options;
   const hasLocalNav = headings.length > 0;
@@ -90,7 +90,7 @@ function renderDocFooter(options: {
   data: DocsData;
   sourcePath: string;
   pages: SidebarLink[];
-  theme: ResolvedFoundatioThemeOptions;
+  theme: ResolvedLumePressOptions;
 }) {
   const { data, theme } = options;
   const index = options.pages.findIndex((page) =>

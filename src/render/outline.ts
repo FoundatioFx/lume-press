@@ -3,7 +3,7 @@ import type {
   DocsData,
   Heading,
   OutlineLevel,
-  ResolvedFoundatioThemeOptions,
+  ResolvedLumePressOptions,
 } from "../types.ts";
 
 export type OutlineSettings = {
@@ -16,7 +16,7 @@ export type OutlineSettings = {
 /** Resolves `outline` front matter against the theme default, like VitePress. */
 export function resolveOutline(
   data: DocsData,
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
 ): OutlineSettings {
   if (data.outline === false) {
     return { enabled: false, min: 2, max: 2, label: theme.outline.label };
@@ -93,7 +93,7 @@ export function renderTableOfContents(headings: Heading[]): string {
     `<ul>${nodes
       .map(
         ({ heading, children }) =>
-          `<li><a href="#${escapeAttribute(heading.slug)}">${escapeHtml(heading.text)}</a>${
+          `<li><a href="#${escapeAttribute(heading.slug)}">${heading.html}</a>${
             children.length ? render(children) : ""
           }</li>`,
       )

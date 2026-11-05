@@ -14,7 +14,7 @@ import type { MarkdownIt, StateCore, Token } from "markdown-it";
 import cjkFriendly from "markdown-it-cjk-friendly";
 import { createHighlight } from "./code.ts";
 import { isExternal } from "./urls.ts";
-import type { ResolvedFoundatioThemeOptions, ThemeLabels } from "./types.ts";
+import type { ResolvedLumePressOptions, ThemeLabels } from "./types.ts";
 import { escapeAttribute, escapeHtml } from "./html.ts";
 import { slugAliases, slugify } from "./slug.ts";
 
@@ -22,7 +22,7 @@ type RenderRule = NonNullable<MarkdownIt["renderer"]["rules"]["fence"]>;
 
 /** Options for Lume's markdown plugin. */
 export function markdownOptions(
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
 ): MarkdownOptions {
   return {
     options: {
@@ -195,10 +195,7 @@ function tocPlugin(md: MarkdownIt) {
 }
 
 /** Port of VitePress's `preWrapperPlugin`, plus Mermaid fences. */
-function preWrapperPlugin(
-  md: MarkdownIt,
-  theme: ResolvedFoundatioThemeOptions,
-) {
+function preWrapperPlugin(md: MarkdownIt, theme: ResolvedLumePressOptions) {
   const fence = md.renderer.rules.fence!;
   md.renderer.rules.fence = (...args) => {
     const [tokens, index] = args;
@@ -282,7 +279,7 @@ const containerTypes = [
 ] as const satisfies Array<keyof ThemeLabels>;
 
 /** Port of VitePress's `containerPlugin`: custom blocks, `details`, `raw`, `v-pre`, and `code-group`. */
-function containerPlugin(md: MarkdownIt, theme: ResolvedFoundatioThemeOptions) {
+function containerPlugin(md: MarkdownIt, theme: ResolvedLumePressOptions) {
   md.use(container, {
     name: "v-pre",
     openRenderer: () => "<div v-pre>\n",
@@ -317,10 +314,12 @@ function containerPlugin(md: MarkdownIt, theme: ResolvedFoundatioThemeOptions) {
           return `<div ${rendered}>\n`;
         }
 
-        const title = md.renderInline(
-          info || theme.labels[name],
-          env as Record<string, unknown>,
-        );
+        // Only the link references, like VitePress: the whole env would
+        // make plugins like footnotes render their output into the title.
+        const title = md.renderInline(info || theme.labels[name], {
+          references: (env as Parameters<MarkdownIt["renderInline"]>[1])
+            ?.references,
+        });
         return name === "details"
           ? `<details ${rendered}><summary>${title}</summary>\n`
           : `<div ${rendered}><p class="custom-block-title${info ? "" : " custom-block-title-default"}">${title}</p>\n`;
@@ -377,10 +376,7 @@ function isContainerType(
 const alertMarker = /^\[!([\w-]+)\]([^\n\r]*)/;
 
 /** Port of VitePress's `gitHubAlertsPlugin` (`> [!NOTE]` and friends). */
-function gitHubAlertsPlugin(
-  md: MarkdownIt,
-  theme: ResolvedFoundatioThemeOptions,
-) {
+function gitHubAlertsPlugin(md: MarkdownIt, theme: ResolvedLumePressOptions) {
   md.core.ruler.after("block", "github-alerts", (state) => {
     const tokens = state.tokens;
     for (let i = 0; i < tokens.length; i++) {

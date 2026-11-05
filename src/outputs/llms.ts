@@ -3,7 +3,7 @@ import { sidebarLinks, uniqueLinks } from "../navigation.ts";
 import type {
   ContentEntry,
   DocsData,
-  ResolvedFoundatioThemeOptions,
+  ResolvedLumePressOptions,
   SidebarItem,
 } from "../types.ts";
 import { isExternal, markdownMirrorUrl } from "../urls.ts";
@@ -11,7 +11,7 @@ import { isExternal, markdownMirrorUrl } from "../urls.ts";
 /** `llms.txt`: the site description and a table of contents of the docs' markdown mirrors, by sidebar group. */
 export function renderLlmsIndex(
   groups: SidebarItem[],
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
   home?: DocsData,
 ) {
   const tableOfContents = groups

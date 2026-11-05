@@ -3,7 +3,7 @@ import { statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ThemePage } from "./lume.ts";
 import { pageData } from "./pages.ts";
-import type { ResolvedFoundatioThemeOptions } from "./types.ts";
+import type { ResolvedLumePressOptions } from "./types.ts";
 
 /**
  * Sets `lastUpdatedDate` (and the sitemap's `lastmod`) from `lastmod` front
@@ -11,7 +11,7 @@ import type { ResolvedFoundatioThemeOptions } from "./types.ts";
  */
 export function applyLastUpdated(
   page: ThemePage,
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
 ) {
   const file = page.src.entry?.src;
   if (!theme.lastUpdated || !file) {

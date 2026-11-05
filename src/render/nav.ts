@@ -1,6 +1,6 @@
 import type {
   NavLink,
-  ResolvedFoundatioThemeOptions,
+  ResolvedLumePressOptions,
   SocialLink,
 } from "../types.ts";
 import { socialIconName } from "../icons.ts";
@@ -9,7 +9,7 @@ import { escapeAttribute, escapeHtml } from "../html.ts";
 import { attrs, classes, link } from "./markup.ts";
 
 type NavState = {
-  theme: ResolvedFoundatioThemeOptions;
+  theme: ResolvedLumePressOptions;
   url: string;
   isHome: boolean;
   hasSidebar: boolean;
@@ -49,7 +49,7 @@ export function renderNav(state: NavState): string {
 }
 
 function renderNavBarTitle(
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
   hasSidebar: boolean,
 ) {
   const { brand } = theme;
@@ -66,7 +66,7 @@ function renderNavBarTitle(
   )}>${logo}<span dir="auto">${escapeHtml(brand.label)}</span></a></div>`;
 }
 
-function renderSearchButton(theme: ResolvedFoundatioThemeOptions) {
+function renderSearchButton(theme: ResolvedLumePressOptions) {
   const label = escapeAttribute(theme.labels.search);
   return `<div class="VPNavBarSearch search"><button type="button" class="VPNavBarSearchButton" aria-label="${label}" aria-keyshortcuts="/ control+k meta+k"><span class="vpi-search" aria-hidden="true"></span><span class="text">${escapeHtml(
     theme.labels.search,
@@ -171,7 +171,7 @@ function renderMenuItem(item: NavLink, url: string, screen: boolean): string {
  * bar can collapse into it; `client/nav-overflow.js` measures the bar and
  * keeps only what doesn't fit, hiding the menu when nothing is collapsed.
  */
-function renderNavBarExtra(theme: ResolvedFoundatioThemeOptions, url: string) {
+function renderNavBarExtra(theme: ResolvedLumePressOptions, url: string) {
   const items = theme.nav
     .map((item) => renderMenuItem(item, url, false))
     .join("");
@@ -204,7 +204,7 @@ function renderFlyout(options: {
 
 /** Mirrors `VPNavAppearance` + `VPSwitchAppearance`: in the bar, the `⋯` menu, or the nav screen. */
 function renderNavAppearance(
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
   variant: "bar" | "menu" | "screen",
 ) {
   const label = theme.labels.darkModeSwitch;

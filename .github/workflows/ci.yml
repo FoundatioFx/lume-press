@@ -42,6 +42,9 @@ jobs:
       - name: Tests
         run: vp test run
 
+      - name: Build VitePress Reference
+        run: vp run vitepress:build
+
       - name: Pack
         run: vp pm pack --out package.tgz
 

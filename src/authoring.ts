@@ -7,12 +7,17 @@
  *
  * Paths starting with `@/` resolve from the docs root, `~/` from the repo
  * root, configured aliases from their targets, and anything else relative to
- * the file. `#L10-L20` selects a GitHub-style line range. Directives inside
- * fenced code are left alone, so docs can show the syntax.
+ * the file. `#L10-L20` selects a GitHub-style line range.
+ *
+ * Like VitePress, includes expand everywhere, even inside fenced code (which
+ * is how a code file is included into a code block), while snippets are only
+ * recognized outside fences. To show an include's syntax in a code block,
+ * write `@@include` and turn it back with a `codeHighlight.transformers`
+ * postprocess, as VitePress's own docs do.
  */
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
-import type { ResolvedFoundatioThemeOptions } from "./types.ts";
+import type { ResolvedLumePressOptions } from "./types.ts";
 import { slugify } from "./slug.ts";
 
 /** Snippet settings with the roots resolved to absolute paths. */
@@ -34,7 +39,7 @@ export function expandAuthoringDirectives(
   markdown: string,
   file: string,
   srcDir: string,
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
 ): string {
   if (!theme.snippets) {
     return markdown;
@@ -102,35 +107,38 @@ function expandIncludes(
     );
   }
 
-  return outsideFences(markdown, (text) =>
-    text.replace(includePattern, (_match, request: string) => {
-      let value = request.trim();
-      const range = /\{(\d*),(\d*)\}$/.exec(value);
-      if (range) {
-        value = value.slice(0, range.index);
-      }
-      const region = /#([^\s{]+)$/.exec(value);
-      if (region) {
-        value = value.slice(0, region.index);
-      }
+  return markdown.replace(includePattern, (_match, request: string) => {
+    let value = request.trim();
+    const range = /\{(\d*),(\d*)\}$/.exec(value);
+    if (range) {
+      value = value.slice(0, range.index);
+    }
+    const region = /#([^\s{]+)$/.exec(value);
+    if (region) {
+      value = value.slice(0, region.index);
+    }
 
-      const target = resolvePath(value, filePath, roots);
-      let lines = stripFrontMatter(readFileSync(target, "utf8")).split(/\r?\n/);
-      if (region) {
-        lines =
-          selectRegion(lines, region[1]) ??
-          selectHeadingSection(lines, region[1]) ??
-          fail(`Include region "${region[1]}" not found in ${target}`);
-      }
-      if (range) {
-        const start = Math.max(Number(range[1] || 1), 1);
-        const end = range[2] ? Number(range[2]) : lines.length;
-        lines = lines.slice(start - 1, end);
-      }
+    const target = resolvePath(value, filePath, roots);
+    let content = readFileSync(target, "utf8");
+    // VitePress drops a markdown file's front matter unless only a line range is selected.
+    if (target.endsWith(".md") && (region || !range)) {
+      content = stripFrontMatter(content);
+    }
+    let lines = content.split(/\r?\n/);
+    if (region) {
+      lines =
+        selectRegion(lines, region[1]) ??
+        selectHeadingSection(lines, region[1]) ??
+        fail(`Include region "${region[1]}" not found in ${target}`);
+    }
+    if (range) {
+      const start = Math.max(Number(range[1] || 1), 1);
+      const end = range[2] ? Number(range[2]) : lines.length;
+      lines = lines.slice(start - 1, end);
+    }
 
-      return expandIncludes(lines.join("\n"), target, roots, depth + 1);
-    }),
-  );
+    return expandIncludes(lines.join("\n"), target, roots, depth + 1);
+  });
 }
 
 function expandSnippets(
@@ -154,15 +162,18 @@ function expandSnippets(
         );
       } else if (snippet.region) {
         const region = selectRegion(lines, snippet.region);
-        lines = dedent(
-          region ??
-            fail(
-              `Code snippet region "${snippet.region}" not found in ${target}`,
-            ),
+        // Like VitePress, markers are dropped from a region but kept in a whole file.
+        lines = stripRegionMarkers(
+          dedent(
+            region ??
+              fail(
+                `Code snippet region "${snippet.region}" not found in ${target}`,
+              ),
+          ),
         );
       }
 
-      const content = stripRegionMarkers(lines).join("\n").replace(/\s+$/, "");
+      const content = lines.join("\n").replace(/\s+$/, "");
       const fence = "`".repeat(
         Math.max(
           3,

@@ -18,12 +18,19 @@ test("inlineJson can't close a script tag", () => {
   expect(inlineJson({ label: "</script>" })).not.toContain("</script>");
 });
 
-test("extractHeadings ignores header anchors", () => {
+test("extractHeadings drops anchors, and badges from the outline text", () => {
   expect(
     extractHeadings(
-      '<h2 id="a-b" tabindex="-1">A &amp; B <a class="header-anchor" href="#a-b">&#8203;</a></h2>',
+      '<h2 id="a-b" tabindex="-1">A &amp; <code>B</code> <span class="VPBadge tip">new</span> <a class="header-anchor" href="#a-b">&#8203;</a></h2>',
     ),
-  ).toEqual([{ level: 2, slug: "a-b", text: "A & B" }]);
+  ).toEqual([
+    {
+      level: 2,
+      slug: "a-b",
+      text: "A & B",
+      html: 'A &amp; B <span class="VPBadge tip">new</span>',
+    },
+  ]);
 });
 
 test("slugify matches VitePress", () => {

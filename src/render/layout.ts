@@ -5,7 +5,7 @@ import { pageData, pageLayout, sourcePath } from "../pages.ts";
 import { sidebarLinks, uniqueLinks } from "../navigation.ts";
 import type {
   DocsData,
-  ResolvedFoundatioThemeOptions,
+  ResolvedLumePressOptions,
   SidebarItem,
 } from "../types.ts";
 import { renderDoc, renderLocalNav } from "./doc.ts";
@@ -26,7 +26,7 @@ export function renderDocument(options: {
   body: string;
   /** The page's sidebar, already resolved for its URL. */
   sidebar: SidebarItem[];
-  theme: ResolvedFoundatioThemeOptions;
+  theme: ResolvedLumePressOptions;
 }): string {
   const { theme } = options;
   const data = pageData(options.page);
@@ -74,7 +74,7 @@ export function renderDocument(options: {
 }
 
 /** Mirrors VitePress's `NotFound` page. */
-export function renderNotFound(theme: ResolvedFoundatioThemeOptions): string {
+export function renderNotFound(theme: ResolvedLumePressOptions): string {
   const { labels } = theme;
   const data = { url: "/404.html", title: labels.notFoundTitle };
   return renderLayout({
@@ -99,7 +99,7 @@ export function renderNotFound(theme: ResolvedFoundatioThemeOptions): string {
 function renderLayout(options: {
   title: string;
   data: DocsData;
-  theme: ResolvedFoundatioThemeOptions;
+  theme: ResolvedLumePressOptions;
   isHome: boolean;
   hasSidebar: boolean;
   hasLocalNav: boolean;

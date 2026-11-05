@@ -37,8 +37,8 @@ import { socialIconStylesUrl } from "./render/head.ts";
 import { renderDocument, renderNotFound } from "./render/layout.ts";
 import type {
   ContentEntry,
-  FoundatioThemeOptions,
-  ResolvedFoundatioThemeOptions,
+  LumePressOptions,
+  ResolvedLumePressOptions,
 } from "./types.ts";
 import {
   isDocsPath,
@@ -50,20 +50,24 @@ import {
 export type {
   Action,
   Badge,
+  CodeHighlightOptions,
   DocsData,
   Feature,
-  FoundatioThemeOptions,
   HeadEntry,
+  HeroImage,
   HomeSection,
+  LumePressOptions,
   NavLink,
   NavMeta,
+  Sidebar,
+  SidebarItem,
   SocialLink,
   ThemeLabels,
 } from "./types.ts";
 
 /** Lume plugin that renders markdown pages like the VitePress default theme. */
-export default function foundatio(
-  options: FoundatioThemeOptions,
+export default function lumePress(
+  options: LumePressOptions,
 ): (site: ThemeSite) => void {
   return (site) => {
     // Lume's default location is a localhost placeholder, not a real site URL.
@@ -80,7 +84,7 @@ export default function foundatio(
   };
 }
 
-function applyTheme(site: ThemeSite, theme: ResolvedFoundatioThemeOptions) {
+function applyTheme(site: ThemeSite, theme: ResolvedLumePressOptions) {
   // Markdown after snippets and includes are expanded, for mirrors and LLM files.
   const expandedMarkdown = new WeakMap<ThemePage, string>();
   const srcDir = site.src();
@@ -136,7 +140,8 @@ function applyTheme(site: ThemeSite, theme: ResolvedFoundatioThemeOptions) {
     const entries: ContentEntry[] = pages.filter(isMarkdownPage).map((page) => {
       const data = pageData(page);
       const html = transformBadgeTags(
-        normalizeInternalLinks(page.text, data.url),
+        // Relative links resolve against the source file, like VitePress.
+        normalizeInternalLinks(page.text, sourcePath(page)),
       );
       data.headings = extractHeadings(html);
       return {

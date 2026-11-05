@@ -48,7 +48,7 @@ export function socialIconStyles(links: SocialLink[]): string {
       const icon = icons[name] ?? icons[aliases[name]?.parent ?? ""];
       if (!icon) {
         throw new Error(
-          `Foundatio theme: Simple Icons has no "${name}" icon for a social link. Use a name from https://simpleicons.org, or set \`icon\` to SVG markup.`,
+          `LumePress: Simple Icons has no "${name}" icon for a social link. Use a name from https://simpleicons.org, or set \`icon\` to SVG markup.`,
         );
       }
       const w = icon.width ?? width;

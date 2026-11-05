@@ -1,11 +1,12 @@
 ---
 layout: home
-title: Foundatio Theme
-description: A Lume theme for Foundatio technical sites
+title: LumePress
+titleTemplate: The VitePress default theme, for Lume
+description: A Lume theme that renders like VitePress's default theme, with generated navigation, local search, and LLM-ready outputs.
 hero:
-  name: Foundatio Theme
-  text: Build docs and project sites with Lume
-  tagline: VitePress-inspired docs, generated navigation, local search, Shiki code blocks, and room for richer site sections.
+  name: LumePress
+  text: The VitePress look, built by Lume
+  tagline: Markdown docs that render like VitePress's default theme, with a sidebar from front matter, local search, and LLM-ready outputs. No Vue required.
   image:
     src: https://raw.githubusercontent.com/FoundatioFx/Foundatio/main/media/foundatio-icon.png
     alt: Foundatio logo
@@ -14,38 +15,75 @@ hero:
       text: Get Started
       link: /guide/getting-started
     - theme: alt
-      text: Components
-      link: /guide/components
+      text: What is LumePress?
+      link: /guide/what-is-lumepress
+    - theme: alt
+      text: View on GitHub
+      link: https://github.com/FoundatioFx/lume-theme
 features:
-  - icon: Docs
-    title: Markdown-first docs
-    details: Write pages as ordinary markdown while the theme generates navigation, outlines, search, and machine-readable mirrors.
-  - icon: Code
-    title: Shiki code blocks
-    details: Highlighted code blocks, copy buttons, line handling, and search excerpts share the same rendering path.
-  - icon: Site
-    title: More than docs
-    details: The theme is structured for project sites that can grow into guides, blogs, news, and custom pages.
+  - icon:
+      src: /icons/vitepress.svg
+      alt: VitePress logo
+    title: Matches VitePress
+    details: Same markup and styles as the VitePress default theme, generated from VitePress itself and checked against a VitePress build of these docs.
+    link: /guide/vitepress-parity
+    linkText: How parity works
+  - icon:
+      light: /icons/markdown-light.svg
+      dark: /icons/markdown-dark.svg
+      alt: Markdown logo
+      wrap: true
+    title: VitePress markdown
+    details: Custom containers, GitHub alerts, code groups, Shiki highlighting with focus and diffs, snippet imports, and file includes.
+    link: /guide/markdown
+    linkText: See every extension
+  - icon: 🧭
+    title: Navigation from front matter
+    details: Sections, order, and badges live in each page's front matter, or hand-write the sidebar like you would in VitePress.
+    link: /guide/navigation
+    linkText: Navigation reference
+  - icon: 🔎
+    title: Local search
+    details: A section-level MiniSearch index with VitePress's search box, keyboard shortcuts, and detailed results.
+  - icon:
+      src: /icons/mermaid.svg
+      alt: Mermaid logo
+      wrap: true
+    title: Mermaid diagrams
+    details: Mermaid code blocks render as diagrams, loaded only on pages that use them and redrawn for dark mode.
+  - icon: 🤖
+    title: Ready for LLMs
+    details: Every docs page gets a markdown mirror, plus llms.txt and llms-full.txt generated from the sidebar.
+    link: /guide/outputs
+    linkText: Generated outputs
 homeSections:
-  - title: Designed for Lume
-    text: Use a standard Lume site with site.use(foundatio(...)) while the theme composes markdown, metadata, navigation, search, sitemap, and support outputs.
+  - title: Just a Lume plugin
+    text: Add <code>site.use(lumePress({ ... }))</code> to an ordinary Lume site. Your <code>_config.ts</code>, your folders, your other plugins; LumePress only renders the markdown pages.
     links:
-      - text: Read the guide
+      - text: Install it
         link: /guide/getting-started
-      - text: View the demo
-        link: /guide/demo
-  - title: Built-in outputs
+      - theme: alt
+        text: Coming from VitePress
+        link: /guide/coming-from-vitepress
+  - title: Built for more than docs
+    text: Home page sections like these are a LumePress extra, for project sites that outgrow a hero and a feature grid.
     features:
-      - title: Local search
-        details: Search indexes page and section content without storing full rendered pages.
-      - title: LLM files
-        details: llms.txt and llms-full.txt are emitted from the same guide structure.
-      - title: Markdown mirrors
-        details: Public markdown mirrors are generated for docs pages.
+      - title: Home sections
+        details: Titled blocks with text, buttons, and cards, written in front matter.
+        link: /guide/home-page#home-sections
+        linkText: Add a section
+      - title: Raw pages
+        details: Drop finished HTML into <code>pages/</code> and it's copied as is.
+        link: /guide/config#rawpagesdir
+        linkText: Raw pages
+      - title: Redirects
+        details: Static redirect pages that keep the URL hash, plus old <code>.html</code> URLs redirected for free.
+        link: /guide/outputs#redirects
+        linkText: Redirects
 ---
 
-## Built for technical project sites
+## This page is the demo
 
-Foundatio Theme is a shared presentation layer for projects that want polished documentation without giving up Lume's flexible build pipeline. Keep most content in markdown, let front matter drive navigation, and still have room for custom pages, release notes, blogs, or project-specific sections.
+Everything above comes from this page's front matter: the hero, the six features (with image, light/dark, and emoji icons), and the two home sections. The [Home Page](/guide/home-page) guide shows how each part is written.
 
-Use the [theme demo](/guide/demo) when changing styles or renderers. The home page stays product-facing while the demo page carries broad visual coverage.
+Markdown after the front matter renders here, below the home page's sections, styled like any docs page.

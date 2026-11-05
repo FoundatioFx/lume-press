@@ -1,4 +1,4 @@
-// Browser entry for the Foundatio theme. Each module wires up one part of the VitePress-style UI.
+// Browser entry for LumePress. Each module wires up one part of the VitePress-style UI.
 import "./client/appearance.js";
 import "./client/nav.js";
 import "./client/nav-overflow.js";

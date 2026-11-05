@@ -1,6 +1,6 @@
 /** Shared browser helpers. The page sets the base path and labels before loading `site.js`. */
-export const labels = window.__LUME_DOCS_LABELS__ ?? {};
-const basePath = window.__LUME_DOCS_BASE_PATH__ ?? "/";
+export const labels = window.__LUMEPRESS_LABELS__ ?? {};
+const basePath = window.__LUMEPRESS_BASE_PATH__ ?? "/";
 
 export function withBase(path) {
   if (basePath === "/" || !path.startsWith("/") || path.startsWith(basePath)) {

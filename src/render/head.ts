@@ -2,7 +2,7 @@ import { escapeHtml, inlineJson } from "../html.ts";
 import type {
   DocsData,
   HeadEntry,
-  ResolvedFoundatioThemeOptions,
+  ResolvedLumePressOptions,
 } from "../types.ts";
 import { attrs } from "./markup.ts";
 
@@ -15,7 +15,7 @@ const appearanceStorageKey = "vitepress-theme-appearance";
 export function renderHead(options: {
   title: string;
   data: DocsData;
-  theme: ResolvedFoundatioThemeOptions;
+  theme: ResolvedLumePressOptions;
 }): string {
   const { data, theme } = options;
   const entries: HeadEntry[] = [
@@ -59,7 +59,7 @@ export function renderHead(options: {
     [
       "script",
       {},
-      `window.__LUME_DOCS_BASE_PATH__=${inlineJson(theme.basePath)};window.__LUME_DOCS_LABELS__=${inlineJson(theme.labels)};`,
+      `window.__LUMEPRESS_BASE_PATH__=${inlineJson(theme.basePath)};window.__LUMEPRESS_LABELS__=${inlineJson(theme.labels)};`,
     ],
     [
       "script",
@@ -79,7 +79,7 @@ export function renderHead(options: {
 /** The page's absolute URL, including the site's base path. */
 function canonical(
   data: DocsData,
-  theme: ResolvedFoundatioThemeOptions,
+  theme: ResolvedLumePressOptions,
 ): HeadEntry[] {
   if (data.canonical === false || !theme.location) {
     return [];
