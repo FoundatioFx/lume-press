@@ -1,5 +1,6 @@
 _site/
 .build/
+build/
 node_modules/
-deno.lock
 .DS_Store
+package.tgz

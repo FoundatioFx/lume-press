@@ -1,292 +1,220 @@
-import type { ThemePage } from "./lume.ts";
-import { createHighlighter } from "shiki";
+/**
+ * Shiki highlighting, ported from VitePress's `highlight()` so code blocks
+ * render the same: same transformers, color replacements, and language rules.
+ *
+ * markdown-it renders synchronously, so languages are loaded up front for each
+ * page (`loadPageLanguages`) and `highlight` then runs without awaiting.
+ */
+import {
+  transformerMetaHighlight,
+  transformerNotationDiff,
+  transformerNotationErrorLevel,
+  transformerNotationFocus,
+  transformerNotationHighlight,
+} from "@shikijs/transformers";
+import {
+  type BundledLanguage,
+  bundledLanguages,
+  createHighlighter,
+  guessEmbeddedLanguages,
+  type Highlighter,
+  isSpecialLang,
+  type ShikiTransformer,
+} from "shiki";
 import type { ResolvedFoundatioThemeOptions } from "./types.ts";
 
-let highlighterPromise: ReturnType<typeof createHighlighter> | undefined;
+type CodeHighlightOptions = Exclude<
+  ResolvedFoundatioThemeOptions["codeHighlight"],
+  false
+>;
 
-export async function highlightCodeBlocks(
-  pages: ThemePage[],
-  theme: ResolvedFoundatioThemeOptions,
+const defaultLanguage = "txt";
+const languagePattern = /^[a-zA-Z0-9-_]+/;
+/** An opening code fence, also inside blockquotes and alerts: captures the language. */
+const fenceLanguagePattern =
+  /^(?:[ \t]*>)*[ \t]*(?:`{3,}|~{3,})[ \t]*([\w-]+)/gm;
+
+type HighlighterEntry = { ready: Promise<Highlighter>; instance?: Highlighter };
+const highlighters = new WeakMap<CodeHighlightOptions, HighlighterEntry>();
+
+/** One Shiki highlighter per resolved options object. */
+function highlighterFor(options: CodeHighlightOptions): HighlighterEntry {
+  let entry = highlighters.get(options);
+  if (!entry) {
+    const created: HighlighterEntry = {
+      ready: createHighlighter({
+        themes: [options.themes.light, options.themes.dark],
+        langs: [],
+        langAlias: options.languageAlias,
+      }).then((instance) => (created.instance = instance)),
+    };
+    highlighters.set(options, (entry = created));
+  }
+  return entry;
+}
+
+/** Loads every language (and embedded language) used by fenced code in `markdown`. */
+export async function loadPageLanguages(
+  markdown: string,
+  options: CodeHighlightOptions,
 ) {
-  if (!theme.codeHighlight) {
-    return;
+  const shiki = await highlighterFor(options).ready;
+  const languages = new Set(
+    [...markdown.matchAll(fenceLanguagePattern)].map(([, language]) =>
+      resolveLanguage(language.toLowerCase(), options),
+    ),
+  );
+  for (const language of languages) {
+    for (const name of [
+      language,
+      ...guessEmbeddedLanguages(markdown, language, shiki),
+    ]) {
+      if (
+        isBundledLanguage(name) &&
+        !shiki.getLoadedLanguages().includes(name)
+      ) {
+        await shiki.loadLanguage(name);
+      }
+    }
+  }
+}
+
+function isBundledLanguage(name: string): name is BundledLanguage {
+  return name in bundledLanguages;
+}
+
+function resolveLanguage(language: string, options: CodeHighlightOptions) {
+  return options.languageAlias[language] ?? language;
+}
+
+/**
+ * markdown-it `highlight` function. Returns `""` when highlighting is off so
+ * markdown-it falls back to escaped `<pre><code>`.
+ */
+export function createHighlight(theme: ResolvedFoundatioThemeOptions) {
+  const options = theme.codeHighlight;
+  if (!options) {
+    return undefined;
   }
 
-  const highlighter = await getHighlighter(theme);
-  for (const page of pages) {
-    for (
-      const wrapper of page.document.querySelectorAll<HTMLElement>(
-        "div[class*='language-']",
-      )
+  const entry = highlighterFor(options);
+  return (code: string, rawLanguage: string, attrs: string): string => {
+    const shiki = entry.instance;
+    if (!shiki) {
+      throw new Error(
+        "Shiki is not ready; call loadPageLanguages() before rendering markdown.",
+      );
+    }
+
+    let language = rawLanguage;
+    const match = languagePattern.exec(language);
+    if (match) {
+      attrs =
+        `${language.slice(match[0].length).replace(/(?<!=)\{/g, " {")} ${attrs}`
+          .trim()
+          .replace(/\s+/g, " ");
+      language = match[0].toLowerCase();
+    }
+    language = resolveLanguage(language || defaultLanguage, options);
+    if (
+      !isSpecialLang(language) &&
+      !shiki.getLoadedLanguages().includes(language)
     ) {
-      const pre = wrapper.querySelector<HTMLElement>("pre");
-      const code = wrapper.querySelector<HTMLElement>("pre > code");
-      if (!pre || !code) {
+      language = defaultLanguage;
+    }
+
+    return shiki.codeToHtml(code.trimEnd(), {
+      lang: language,
+      themes: options.themes,
+      defaultColor: false,
+      meta: { __raw: attrs },
+      transformers,
+      colorReplacements,
+    });
+  };
+}
+
+/** Matches VitePress: prevents shell prompt symbols from being selected or copied. */
+const disableShellSymbolSelect: ShikiTransformer = {
+  name: "vitepress:disable-shell-symbol-select",
+  tokens(lines) {
+    if (!/^(?:shellscript|shell|bash|sh|zsh)$/.test(this.options.lang)) {
+      return;
+    }
+    for (const tokens of lines) {
+      if (tokens.length < 2) {
         continue;
       }
-
-      const language = shikiLanguage(wrapper.className, theme);
-      const source = (code.textContent ?? "").replace(/\n$/, "");
-      const highlighted = highlighter.codeToHtml(source, {
-        lang: language,
-        themes: theme.codeHighlight.themes,
-        defaultColor: false,
-      });
-
-      pre.outerHTML = normalizeVitePressShikiColors(highlighted);
-    }
-  }
-}
-
-function normalizeVitePressShikiColors(html: string) {
-  return html
-    .replaceAll("--shiki-light:#D73A49", "--shiki-light:#c62739")
-    .replaceAll("--shiki-light:#6A737D", "--shiki-light:#62687b")
-    .replaceAll("--shiki-dark:#6A737D", "--shiki-dark:#818e99");
-}
-
-export function applyCodeLineAnnotations(page: ThemePage) {
-  for (
-    const wrapper of page.document.querySelectorAll<HTMLElement>(
-      "div[class*='language-']",
-    )
-  ) {
-    const code = wrapper.querySelector<HTMLElement>("pre > code");
-    const pre = wrapper.querySelector<HTMLElement>("pre");
-    if (!code || !pre) {
-      continue;
-    }
-
-    const metadata = parseLineMetadata(
-      wrapper.getAttribute("data-line-meta") ?? "",
-    );
-    const lineNumbers = wrapper.getAttribute("data-line-numbers") ===
-      "true";
-    const lineNumberStart = Math.max(
-      1,
-      Number(wrapper.getAttribute("data-line-number-start") ?? 1),
-    );
-    const shikiLines = [...code.querySelectorAll<HTMLElement>(".line")];
-    const lineCount = shikiLines.length ||
-      code.innerHTML.split("\n").length;
-    const hasFocusedLines = [...metadata.values()].some((classes) =>
-      classes.includes("has-focus")
-    );
-
-    if (shikiLines.length > 0) {
-      shikiLines.forEach((line, index) => {
-        applyLineMetadata(
-          line,
-          index + 1,
-          lineNumberStart + index,
-          metadata,
-        );
-      });
-      code.innerHTML = shikiLines.map((line) => line.outerHTML).join("\n");
-    } else {
-      const original = code.innerHTML.replace(/\n$/, "");
-      code.innerHTML = original.split("\n").map((line, index) => {
-        const sourceLineNumber = index + 1;
-        const displayLineNumber = lineNumberStart + index;
-        const classes = [
-          "line",
-          ...(metadata.get(sourceLineNumber) ?? []),
-        ].join(" ");
-        return `<span class="${classes}" data-line-number="${displayLineNumber}">${
-          line || "\u200b"
-        }</span>`;
-      }).join("\n");
-    }
-
-    wrapper.classList.add("has-lines");
-    if (hasFocusedLines) {
-      pre.classList.add("has-focused-lines");
-    }
-
-    if (lineNumbers) {
-      wrapper.classList.add("line-numbers-mode");
-      if (!wrapper.querySelector(".line-numbers-wrapper")) {
-        const lineNumbersWrapper = page.document.createElement("div");
-        lineNumbersWrapper.className = "line-numbers-wrapper";
-        lineNumbersWrapper.setAttribute("aria-hidden", "true");
-        lineNumbersWrapper.innerHTML = lineNumbersHtml(
-          lineCount,
-          lineNumberStart,
-        );
-        wrapper.appendChild(lineNumbersWrapper);
+      const first = tokens[0].content.trim();
+      if ((first === "$" || first === ">") && tokens[1].content[0] === " ") {
+        tokens[0].content = `${first} `;
+        tokens[0].htmlStyle ??= {};
+        tokens[0].htmlStyle["user-select"] = "none";
+        tokens[0].htmlStyle["-webkit-user-select"] = "none";
+        tokens[1].content = tokens[1].content.slice(1);
       }
     }
+  },
+};
 
-    wrapper.removeAttribute("data-line-meta");
-    wrapper.removeAttribute("data-line-numbers");
-    wrapper.removeAttribute("data-line-number-start");
-  }
-
-  initializeCodeGroups(page);
-}
-
-function getHighlighter(theme: ResolvedFoundatioThemeOptions) {
-  if (!theme.codeHighlight) {
-    throw new Error("Code highlighting is disabled.");
-  }
-
-  highlighterPromise ??= createHighlighter({
-    themes: [
-      theme.codeHighlight.themes.light,
-      theme.codeHighlight.themes.dark,
-    ],
-    langs: theme.codeHighlight.langs,
-  });
-
-  return highlighterPromise;
-}
-
-function shikiLanguage(
-  className: string,
-  theme: ResolvedFoundatioThemeOptions,
-): string {
-  if (!theme.codeHighlight) {
-    return "text";
-  }
-
-  const raw = /language-([\w-]+)/.exec(className)?.[1]?.toLowerCase() ??
-    "text";
-  const normalized = languageAliases[raw] ?? raw;
-  return theme.codeHighlight.langs.includes(normalized) ? normalized : "text";
-}
-
-function applyLineMetadata(
-  line: HTMLElement,
-  sourceLineNumber: number,
-  displayLineNumber: number,
-  metadata: Map<number, string[]>,
-) {
-  line.setAttribute("data-line-number", String(displayLineNumber));
-
-  const classes = metadata.get(sourceLineNumber) ?? [];
-  if (classes.length > 0) {
-    line.classList.add(...classes);
-  }
-
-  if (line.innerHTML === "") {
-    line.innerHTML = "\u200b";
-  }
-}
-
-function parseLineMetadata(value: string) {
-  const result = new Map<number, string[]>();
-  for (const item of value.split(";")) {
-    if (!item.trim()) {
-      continue;
-    }
-
-    const [lineValue, classValue = ""] = item.split(":", 2);
-    const line = Number(lineValue);
-    const classes = classValue.split(",").map((part) => part.trim())
-      .filter(Boolean);
-    if (Number.isFinite(line) && classes.length > 0) {
-      result.set(line, classes);
-    }
-  }
-
-  return result;
-}
-
-function lineNumbersHtml(count: number, start: number) {
-  return Array.from(
-    { length: count },
-    (_value, index) => `<span class="line-number">${start + index}</span><br>`,
-  ).join("");
-}
-
-function initializeCodeGroups(page: ThemePage) {
-  let groupIndex = 0;
-
-  for (
-    const group of page.document.querySelectorAll<HTMLElement>(
-      ".vp-code-group",
-    )
-  ) {
-    const children = [...group.children];
-    if (
-      children.some((child) =>
-        child.classList.contains("tabs") || child.classList.contains("blocks")
-      )
-    ) {
-      continue;
-    }
-
-    const blocks = children.filter((
-      child,
-    ): child is HTMLElement =>
-      child.matches("div[class^='language-'], div[class*=' language-']")
-    );
-
-    if (blocks.length === 0) {
-      continue;
-    }
-
-    const tabs = page.document.createElement("div");
-    tabs.className = "tabs";
-    const blocksWrapper = page.document.createElement("div");
-    blocksWrapper.className = "blocks";
-    const groupName = `code-group-${groupIndex++}`;
-
-    blocks.forEach((block, index) => {
-      const title = block.getAttribute("data-title");
-      const tabTitle = title || block.querySelector(".lang")?.textContent ||
-        `Example ${index + 1}`;
-      block.setAttribute("data-tab-title", tabTitle);
-      block.removeAttribute("data-title");
-
-      const active = index === 0;
-      block.classList.toggle("active", active);
-      if (active) {
-        block.removeAttribute("hidden");
-      } else {
-        block.setAttribute("hidden", "");
+const transformers: ShikiTransformer[] = [
+  transformerMetaHighlight(),
+  transformerNotationDiff(),
+  transformerNotationFocus({
+    classActiveLine: "has-focus",
+    classActivePre: "has-focused-lines",
+  }),
+  transformerNotationHighlight(),
+  transformerNotationErrorLevel(),
+  disableShellSymbolSelect,
+  {
+    name: "vitepress:add-dir",
+    pre(node) {
+      node.properties.dir = "ltr";
+    },
+  },
+  {
+    name: "vitepress:empty-line",
+    code(hast) {
+      for (const line of hast.children) {
+        if (
+          line.type === "element" &&
+          line.tagName === "span" &&
+          Array.isArray(line.properties.class) &&
+          line.properties.class.includes("line") &&
+          line.children.length === 0
+        ) {
+          line.children.push({
+            type: "element",
+            tagName: "wbr",
+            properties: {},
+            children: [],
+          });
+        }
       }
+    },
+  },
+];
 
-      const input = page.document.createElement("input");
-      const id = `${groupName}-${index}`;
-      input.setAttribute("type", "radio");
-      input.setAttribute("name", groupName);
-      input.setAttribute("id", id);
-      if (active) {
-        input.setAttribute("checked", "");
-      }
-
-      const label = page.document.createElement("label");
-      label.setAttribute("data-title", tabTitle);
-      label.setAttribute("for", id);
-      label.textContent = tabTitle;
-
-      tabs.appendChild(input);
-      tabs.appendChild(label);
-      blocksWrapper.appendChild(block);
-    });
-
-    group.insertBefore(tabs, group.firstChild);
-    group.appendChild(blocksWrapper);
-  }
-}
-
-const languageAliases: Record<string, string> = {
-  bash: "shellscript",
-  c: "csharp",
-  cs: "csharp",
-  javascript: "javascript",
-  js: "javascript",
-  md: "markdown",
-  ps1: "powershell",
-  pwsh: "powershell",
-  sh: "shellscript",
-  shell: "shellscript",
-  text: "text",
-  ts: "typescript",
-  txt: "text",
-  xml: "xml",
-  yaml: "yaml",
-  yml: "yaml",
-  zsh: "shellscript",
+/** VitePress's contrast tweaks for the GitHub themes. */
+const colorReplacements = {
+  "github-light": {
+    "#959da5": "#6c676f",
+    "#28a745": "#0e790b",
+    "#b08800": "#846312",
+    "#e36209": "#c13617",
+    "#3192aa": "#05728b",
+    "#d73a49": "#c62739",
+    "#22863a": "#11782a",
+    "#6a737d": "#62687b",
+    "#1b7c83": "#06747a",
+    "#0366d6": "#0663d0",
+    "#cb2431": "#c82430",
+  },
+  "github-dark": {
+    "#586069": "#5b93a3",
+    "#6a737d": "#818e99",
+    "#ea4a5a": "#ef5564",
+    "#2188ff": "#268bf9",
+  },
 };

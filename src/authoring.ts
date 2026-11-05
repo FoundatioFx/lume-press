@@ -1,279 +1,395 @@
-import {
-  dirname,
-  extname,
-  isAbsolute,
-  normalize,
-  relative,
-  resolve,
-} from "node:path";
-import type { ThemePage } from "./lume.ts";
-
+/**
+ * VitePress-compatible authoring directives, expanded in the markdown source
+ * before rendering:
+ *
+ * - `<<< path#region{1,3-5 lang attrs} [title]` imports a code snippet.
+ * - `<!--@include: path#region-or-heading{start,end}-->` includes markdown.
+ *
+ * Paths starting with `@/` resolve from the docs root, `~/` from the repo
+ * root, configured aliases from their targets, and anything else relative to
+ * the file. `#L10-L20` selects a GitHub-style line range. Directives inside
+ * fenced code are left alone, so docs can show the syntax.
+ */
+import { readFileSync } from "node:fs";
+import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
 import type { ResolvedFoundatioThemeOptions } from "./types.ts";
-import { sourcePath } from "./utils.ts";
+import { slugify } from "./slug.ts";
 
-const snippetPattern = /^<<<\s+(.+?)\s*$/gm;
-const includePattern = /<!--\s*@include:\s+(.+?)\s*-->/g;
+/** Snippet settings with the roots resolved to absolute paths. */
+type Roots = {
+  docsRoot: string;
+  repoRoot: string;
+  aliases: Array<[prefix: string, target: string]>;
+};
 
-export function prepareMarkdownSource(
-  page: ThemePage,
+const snippetPattern = /^[ \t]{0,3}<<<[ \t]+(.+?)[ \t]*$/gm;
+const includePattern = /<!--\s*@include:\s*(.*?)\s*-->/g;
+const maxIncludeDepth = 10;
+
+/**
+ * Expands snippets and includes in `markdown`, the source of `file`. Relative
+ * snippet roots and aliases resolve from `srcDir`, the site's source folder.
+ */
+export function expandAuthoringDirectives(
+  markdown: string,
+  file: string,
+  srcDir: string,
   theme: ResolvedFoundatioThemeOptions,
-) {
+): string {
   if (!theme.snippets) {
-    page.text = expandGithubAlerts(page.text);
-    return;
+    return markdown;
   }
 
-  const pagePath = sourcePath(page);
-  const withIncludes = expandMarkdownIncludes(page.text, pagePath, theme);
-  const withSnippets = expandCodeSnippets(withIncludes, pagePath, theme);
-  page.text = expandGithubAlerts(withSnippets);
+  const roots: Roots = {
+    docsRoot: resolve(srcDir, theme.snippets.docsRoot),
+    repoRoot: resolve(srcDir, theme.snippets.repoRoot),
+    aliases: Object.entries(theme.snippets.aliases).map(([prefix, target]) => [
+      prefix,
+      resolve(srcDir, target),
+    ]),
+  };
+  return expandSnippets(expandIncludes(markdown, file, roots, 0), file, roots);
 }
 
-function expandMarkdownIncludes(
+/** Applies `transform` to the parts of `markdown` outside fenced code blocks. */
+function outsideFences(
   markdown: string,
-  pagePath: string,
-  theme: ResolvedFoundatioThemeOptions,
-) {
-  return markdown.replace(includePattern, (_match, request: string) => {
-    const resolved = resolveRequest(request, pagePath, theme);
-    let content = readRequestedLines(resolved).content;
-    content = stripFrontMatter(content).trim();
-    return content ? `${content}\n` : "";
+  transform: (text: string) => string,
+): string {
+  const lines = markdown.split("\n");
+  const fenced = fencedLines(lines);
+  const parts: string[] = [];
+  let start = 0;
+  for (let index = 1; index <= lines.length; index++) {
+    if (index === lines.length || fenced[index] !== fenced[start]) {
+      const text = lines.slice(start, index).join("\n");
+      parts.push(fenced[start] ? text : transform(text));
+      start = index;
+    }
+  }
+  return parts.join("\n");
+}
+
+/** Which lines belong to fenced code blocks (including the fences), also inside blockquotes. */
+function fencedLines(lines: string[]): boolean[] {
+  let fence: string | undefined;
+  return lines.map((line) => {
+    const marker = /^(?:[ \t]*>)*[ \t]{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (!fence) {
+      fence = marker;
+      return Boolean(marker);
+    }
+    if (
+      marker?.[0] === fence[0] &&
+      marker.length >= fence.length &&
+      !/\S/.test(line.slice(line.indexOf(marker) + marker.length))
+    ) {
+      fence = undefined;
+    }
+    return true;
   });
 }
 
-function expandCodeSnippets(
+function expandIncludes(
   markdown: string,
-  pagePath: string,
-  theme: ResolvedFoundatioThemeOptions,
-) {
-  return markdown.replace(snippetPattern, (_match, request: string) => {
-    const resolved = resolveRequest(request, pagePath, theme);
-    const { content, displayPath } = readRequestedLines(resolved);
-    const language = resolved.language || languageFromPath(displayPath);
-    const title = resolved.title ?? displayPath.replaceAll("\\", "/");
-    const fence = codeFenceFor(content);
-    const meta = [language, title ? `[${title}]` : ""].filter(Boolean).join(
-      " ",
-    );
-
-    return `${fence}${meta}\n${content.replace(/\s+$/, "")}\n${fence}`;
-  });
-}
-
-type ResolvedRequest = {
-  filePath: string;
-  displayPath: string;
-  range?: LineRange;
-  title?: string;
-  language?: string;
-};
-
-type LineRange = {
-  start: number;
-  end: number;
-};
-
-function resolveRequest(
-  request: string,
-  pagePath: string,
-  theme: ResolvedFoundatioThemeOptions,
-): ResolvedRequest {
-  const snippets = theme.snippets;
-  if (!snippets) {
-    throw new Error("Snippet support is disabled.");
-  }
-
-  let value = request.trim();
-  let language: string | undefined;
-  let title: string | undefined;
-  let range: LineRange | undefined;
-
-  const titleMatch = /\s+\[([^\]]+)]\s*$/.exec(value);
-  if (titleMatch) {
-    title = titleMatch[1].trim();
-    value = value.slice(0, titleMatch.index).trim();
-  }
-
-  const trailingLanguage = /\s+lang=([A-Za-z0-9_-]+)\s*$/.exec(value);
-  if (trailingLanguage) {
-    language = trailingLanguage[1];
-    value = value.slice(0, trailingLanguage.index).trim();
-  }
-
-  const rangeMatch = /\{([^}]+)}\s*$/.exec(value);
-  if (rangeMatch) {
-    range = parseLineRange(rangeMatch[1]);
-    value = value.slice(0, rangeMatch.index).trim();
-  }
-
-  const hashRange = /#L(\d+)(?:-L?(\d+))?$/.exec(value);
-  if (hashRange) {
-    range = {
-      start: Number(hashRange[1]),
-      end: Number(hashRange[2] ?? hashRange[1]),
-    };
-    value = value.slice(0, hashRange.index).trim();
-  }
-
-  const docsRoot = resolve(Deno.cwd(), snippets.docsRoot);
-  const repoRoot = resolve(Deno.cwd(), snippets.repoRoot);
-  const absolutePagePath = resolve(
-    Deno.cwd(),
-    pagePath.replace(/^\/+/, ""),
-  );
-
-  const alias = Object.entries(snippets.aliases).find(([prefix]) =>
-    value.startsWith(prefix)
-  );
-  const resolved = alias
-    ? resolve(Deno.cwd(), alias[1], value.slice(alias[0].length))
-    : value.startsWith("@/")
-    ? resolve(docsRoot, value.slice(2))
-    : value.startsWith("~/")
-    ? resolve(repoRoot, value.slice(2))
-    : resolve(dirname(absolutePagePath), value);
-
-  const filePath = normalize(resolved);
-  if (!isInside(filePath, repoRoot) && !isInside(filePath, docsRoot)) {
+  filePath: string,
+  roots: Roots,
+  depth: number,
+): string {
+  if (depth > maxIncludeDepth) {
     throw new Error(
-      `Refusing to read ${value}; snippets must stay under ${repoRoot} or ${docsRoot}.`,
+      `Includes nest deeper than ${maxIncludeDepth} levels in ${filePath}`,
     );
   }
 
-  return {
-    filePath,
-    displayPath: normalize(relative(repoRoot, filePath)).replaceAll(
-      "\\",
-      "/",
-    ),
-    range,
-    title,
-    language,
-  };
-}
-
-function readRequestedLines(request: ResolvedRequest) {
-  const content = Deno.readTextFileSync(request.filePath);
-  if (!request.range) {
-    return { content, displayPath: request.displayPath };
-  }
-
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  const start = Math.max(request.range.start, 1);
-  const end = Math.max(request.range.end, start);
-  return {
-    content: lines.slice(start - 1, end).join("\n"),
-    displayPath: `${request.displayPath}:${start}-${end}`,
-  };
-}
-
-function parseLineRange(value: string): LineRange {
-  const match = /^(\d+)(?:[-,](\d+))?/.exec(value.trim());
-  if (!match) {
-    throw new Error(`Invalid snippet range: ${value}`);
-  }
-
-  return {
-    start: Number(match[1]),
-    end: Number(match[2] ?? match[1]),
-  };
-}
-
-function expandGithubAlerts(markdown: string) {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const output: string[] = [];
-
-  for (let index = 0; index < lines.length; index++) {
-    const alert = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)]\s*(.*)$/i
-      .exec(lines[index]);
-    if (!alert) {
-      output.push(lines[index]);
-      continue;
-    }
-
-    const type = alertType(alert[1]);
-    const title = alert[2]?.trim() || alertTitle(alert[1]);
-    const body: string[] = [];
-
-    for (index = index + 1; index < lines.length; index++) {
-      const quoted = /^>\s?(.*)$/.exec(lines[index]);
-      if (!quoted) {
-        index--;
-        break;
+  return outsideFences(markdown, (text) =>
+    text.replace(includePattern, (_match, request: string) => {
+      let value = request.trim();
+      const range = /\{(\d*),(\d*)\}$/.exec(value);
+      if (range) {
+        value = value.slice(0, range.index);
       }
-      body.push(quoted[1]);
+      const region = /#([^\s{]+)$/.exec(value);
+      if (region) {
+        value = value.slice(0, region.index);
+      }
+
+      const target = resolvePath(value, filePath, roots);
+      let lines = stripFrontMatter(readFileSync(target, "utf8")).split(/\r?\n/);
+      if (region) {
+        lines =
+          selectRegion(lines, region[1]) ??
+          selectHeadingSection(lines, region[1]) ??
+          fail(`Include region "${region[1]}" not found in ${target}`);
+      }
+      if (range) {
+        const start = Math.max(Number(range[1] || 1), 1);
+        const end = range[2] ? Number(range[2]) : lines.length;
+        lines = lines.slice(start - 1, end);
+      }
+
+      return expandIncludes(lines.join("\n"), target, roots, depth + 1);
+    }),
+  );
+}
+
+function expandSnippets(
+  markdown: string,
+  filePath: string,
+  roots: Roots,
+): string {
+  return outsideFences(markdown, (text) =>
+    text.replace(snippetPattern, (_match, request: string) => {
+      const snippet = parseSnippet(request);
+      const target = resolvePath(snippet.path, filePath, roots);
+      let lines = readFileSync(target, "utf8")
+        .replace(/\r\n/g, "\n")
+        .split("\n");
+
+      const lineRange = /^L(\d+)(?:-L?(\d+))?$/.exec(snippet.region);
+      if (lineRange) {
+        lines = lines.slice(
+          Number(lineRange[1]) - 1,
+          Number(lineRange[2] ?? lineRange[1]),
+        );
+      } else if (snippet.region) {
+        const region = selectRegion(lines, snippet.region);
+        lines = dedent(
+          region ??
+            fail(
+              `Code snippet region "${snippet.region}" not found in ${target}`,
+            ),
+        );
+      }
+
+      const content = stripRegionMarkers(lines).join("\n").replace(/\s+$/, "");
+      const fence = "`".repeat(
+        Math.max(
+          3,
+          ...[...content.matchAll(/`{3,}/g)].map((m) => m[0].length + 1),
+        ),
+      );
+      const info = [
+        snippet.lang || extension(target),
+        snippet.lines && `{${snippet.lines}}`,
+        snippet.attrs,
+        `[${snippet.title || target.split(/[\\/]/).pop()}]`,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return `${fence}${info}\n${content}\n${fence}`;
+    }),
+  );
+}
+
+/** Parses `path[#region][{[lines] [lang] [attrs]}][ [title]]`, right to left like VitePress. */
+function parseSnippet(raw: string) {
+  let rest = raw.trim();
+  let title = "";
+  const titleMatch = /\s*\[(.+)\]$/.exec(rest);
+  if (titleMatch) {
+    title = titleMatch[1];
+    rest = rest.slice(0, titleMatch.index).trimEnd();
+  }
+
+  let lines = "";
+  let lang = "";
+  let attrs = "";
+  const braceStart = rest.lastIndexOf("{");
+  if (rest.endsWith("}") && braceStart > 0) {
+    let meta = rest.slice(braceStart + 1, -1).trim();
+    rest = rest.slice(0, braceStart).trimEnd();
+    const first = /^\S+/.exec(meta)?.[0] ?? "";
+    if (/^[\d\s,-]+$/.test(meta)) {
+      lines = meta.replace(/\s+/g, "");
+      meta = "";
+    } else if (/^\d+(?:[,-]\d+)*$/.test(first)) {
+      lines = first;
+      meta = meta.slice(first.length).trimStart();
+    }
+    lang = /^\S+/.exec(meta)?.[0] ?? "";
+    attrs = meta.slice(lang.length).trim();
+  }
+
+  let region = "";
+  const regionMatch = /#([\w.-]+)$/.exec(rest);
+  if (regionMatch) {
+    region = regionMatch[1];
+    rest = rest.slice(0, regionMatch.index);
+  }
+
+  return { path: rest.trim(), region, lines, lang, attrs, title };
+}
+
+function resolvePath(value: string, fromFile: string, roots: Roots): string {
+  const alias = roots.aliases.find(([prefix]) => value.startsWith(prefix));
+  const resolved = normalize(
+    alias
+      ? resolve(alias[1], value.slice(alias[0].length))
+      : value.startsWith("@/")
+        ? resolve(roots.docsRoot, value.slice(2))
+        : value.startsWith("~/")
+          ? resolve(roots.repoRoot, value.slice(2))
+          : resolve(dirname(fromFile), value),
+  );
+
+  if (
+    !isInside(resolved, roots.repoRoot) &&
+    !isInside(resolved, roots.docsRoot)
+  ) {
+    throw new Error(
+      `Refusing to read ${value}; snippets must stay under ${roots.repoRoot} or ${roots.docsRoot}.`,
+    );
+  }
+  return resolved;
+}
+
+/** VitePress's region markers, covering `//`, `#`, `<!-- -->`, `/* *\/`, `(* *)`, and JSON styles. */
+const regionMarkers = [
+  {
+    start: /^\s*(?:\/\/\s*#?|(?:--|::|@?[rR][eE][mM])\s*#)region\b\s*(.*?)\s*$/,
+    end: /^\s*(?:\/\/\s*#?|(?:--|::|@?[rR][eE][mM])\s*#)endregion\b\s*(.*?)\s*$/,
+  },
+  {
+    start: /^\s*#\s*(?:#\s*|pragma\s+)?[rR]egion\b\s*(.*?)\s*$/,
+    end: /^\s*#\s*(?:#\s*|pragma\s+)?[eE]nd ?[rR]egion\b\s*(.*?)\s*$/,
+  },
+  {
+    start: /^\s*<!--\s*#?region\b\s*(.*?)\s*-->/,
+    end: /^\s*<!--\s*#?endregion\b\s*(.*?)\s*-->/,
+  },
+  {
+    start: /^\s*\/\*\s*#region\b\s*(.*?)\s*\*\//,
+    end: /^\s*\/\*\s*#endregion\b\s*(.*?)\s*\*\//,
+  },
+  {
+    start: /^\s*\(\*\s*#region\b\s*(.*?)\s*\*\)/,
+    end: /^\s*\(\*\s*#endregion\b\s*(.*?)\s*\*\)/,
+  },
+  {
+    start: /^\s*"\/{2,}\s*#region\b\s*(.*?)":\s*"",?\s*$/,
+    end: /^\s*"\/{2,}\s*#endregion\b\s*(.*?)":\s*"",?\s*$/,
+  },
+];
+
+/** Returns the lines of every region named `name` (outermost when nested), or `undefined`. */
+function selectRegion(lines: string[], name: string): string[] | undefined {
+  const open: Array<{
+    name: string;
+    start: number;
+    marker: (typeof regionMarkers)[number];
+  }> = [];
+  const selected: string[] = [];
+  let found = false;
+
+  lines.forEach((line, index) => {
+    const start = regionMarkers.find((marker) => marker.start.test(line));
+    if (start) {
+      open.push({
+        name: unquote(start.start.exec(line)![1]),
+        start: index + 1,
+        marker: start,
+      });
+      return;
     }
 
-    output.push(`::: ${type} ${title}`);
-    output.push(...body);
-    output.push(":::");
-  }
+    for (const marker of regionMarkers) {
+      const end = marker.end.exec(line);
+      if (!end) {
+        continue;
+      }
+      const endName = unquote(end[1]);
+      const openIndex = endName
+        ? open.findLastIndex((region) => region.name === endName)
+        : open.findLastIndex((region) => region.marker === marker);
+      if (openIndex === -1) {
+        continue;
+      }
+      const [closed] = open.splice(openIndex);
+      if (
+        closed.name === name &&
+        !open.some((region) => region.name === name)
+      ) {
+        selected.push(...lines.slice(closed.start, index));
+        found = true;
+      }
+      break;
+    }
+  });
 
-  return output.join("\n");
+  return found ? selected : undefined;
 }
 
-function alertType(value: string) {
-  switch (value.toUpperCase()) {
-    case "NOTE":
-      return "info";
-    case "WARNING":
-      return "warning";
-    case "CAUTION":
-      return "danger";
-    default:
-      return "tip";
-  }
-}
-
-function alertTitle(value: string) {
-  const normalized = value.toUpperCase();
-  return normalized === "CAUTION" ? "CAUTION" : normalized;
-}
-
-function stripFrontMatter(markdown: string) {
-  return markdown.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "");
-}
-
-function codeFenceFor(content: string) {
-  const longest = Math.max(
-    2,
-    ...Array.from(content.matchAll(/`+/g), (match) => match[0].length),
+/** VitePress includes can also target the content under a heading, by its slug. */
+function selectHeadingSection(
+  lines: string[],
+  slug: string,
+): string[] | undefined {
+  const fenced = fencedLines(lines);
+  const headingLevel = (index: number) =>
+    fenced[index] ? undefined : /^(#{1,6})\s/.exec(lines[index])?.[1].length;
+  const start = lines.findIndex(
+    (line, index) =>
+      headingLevel(index) !== undefined &&
+      slugify(
+        line
+          .replace(/^#+\s+/, "")
+          .replace(/\s*\{#[^}]+\}\s*$/, "")
+          .trim(),
+      ) === slug,
   );
-  return "`".repeat(longest + 1);
+  if (start === -1) {
+    return undefined;
+  }
+
+  const level = headingLevel(start)!;
+  const end = lines.findIndex(
+    (_line, index) => index > start && (headingLevel(index) ?? 7) <= level,
+  );
+  return lines.slice(start + 1, end === -1 ? undefined : end);
 }
 
-function languageFromPath(path: string) {
-  const extension = extname(path).toLowerCase().replace(/^\./, "");
-  return languageByExtension[extension] ?? extension;
+function stripRegionMarkers(lines: string[]) {
+  return lines.filter(
+    (line) =>
+      !regionMarkers.some(
+        (marker) => marker.start.test(line) || marker.end.test(line),
+      ),
+  );
+}
+
+function dedent(lines: string[]) {
+  const indent = Math.min(
+    ...lines
+      .filter((line) => line.trim())
+      .map((line) => /^[ \t]*/.exec(line)![0].length),
+  );
+  return Number.isFinite(indent) && indent > 0
+    ? lines.map((line) => line.slice(indent))
+    : lines;
+}
+
+function unquote(value: string) {
+  return value.replace(/^(['"])(.*)\1$/, "$2");
+}
+
+function extension(path: string) {
+  return /\.([a-zA-Z0-9]+)$/.exec(path)?.[1] ?? "";
+}
+
+/** Removes a leading `---` front matter block. */
+export function stripFrontMatter(markdown: string): string {
+  return markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 }
 
 function isInside(path: string, root: string) {
-  if (path === root) {
-    return true;
-  }
-
   const child = relative(root, path);
-  return child !== "" && !child.startsWith("..") && !isAbsolute(child);
+  return (
+    path === root ||
+    (child !== "" && !child.startsWith("..") && !isAbsolute(child))
+  );
 }
 
-const languageByExtension: Record<string, string> = {
-  cs: "csharp",
-  csproj: "xml",
-  props: "xml",
-  targets: "xml",
-  fs: "fsharp",
-  js: "javascript",
-  jsx: "jsx",
-  ts: "typescript",
-  tsx: "tsx",
-  md: "markdown",
-  yml: "yaml",
-  yaml: "yaml",
-  ps1: "powershell",
-  sh: "bash",
-  html: "html",
-  css: "css",
-  json: "json",
-  xml: "xml",
-};
+function fail(message: string): never {
+  throw new Error(message);
+}

@@ -1,148 +1,210 @@
-import type { DocsData, SidebarPage, SidebarSection } from "./types.ts";
-import {
-  docsUrlPrefix,
-  firstHeading,
-  isDocsPath,
-  sourcePath,
-  titleFromPath,
-} from "./utils.ts";
+import { escapeHtml } from "./html.ts";
 import type { ThemePage } from "./lume.ts";
+import { firstHeading, pageData, sourcePath } from "./pages.ts";
+import { renderBadge } from "./render/badge.ts";
+import type { Sidebar, SidebarItem, SidebarLink } from "./types.ts";
+import { isExternal, normalizeHref, titleFromPath } from "./urls.ts";
 
-export function toSidebarPage(page: ThemePage, docsRoot: string): SidebarPage {
-  const data = page.data as DocsData;
-  const meta = data.nav ?? {};
-  const title = meta.title ?? data.title ?? firstHeading(data) ??
-    titleFromPath(sourcePath(page));
+type SortedItem = {
+  title: string;
+  order: number;
+  item: SidebarItem;
+  children: SortedItem[];
+};
 
-  return {
-    title,
-    url: data.url,
-    sourcePath: sourcePath(page),
-    section: meta.section ?? sectionFromPath(sourcePath(page), docsRoot),
-    sectionOrder: meta.sectionOrder ?? 100,
-    order: meta.order ?? 100,
-    level: 1,
-    collapsed: meta.collapsed ?? false,
-    badge: typeof meta.badge === "string" ? { text: meta.badge } : meta.badge,
-    children: [],
-  };
-}
-
+/**
+ * Builds a sidebar from front matter: pages are grouped by `nav.section`
+ * (default: the docs root's name), nested by subfolder, and sorted by
+ * `sectionOrder`/`order`, then title.
+ */
 export function buildSidebar(
-  pages: SidebarPage[],
+  pages: ThemePage[],
   docsRoot: string,
-): SidebarSection[] {
-  const sections = new Map<string, SidebarSection>();
+): SidebarItem[] {
+  const sections = new Map<string, SortedItem>();
 
   for (const page of pages) {
-    const section = sections.get(page.section) ?? {
-      title: page.section,
-      order: page.sectionOrder,
-      items: [],
+    const data = pageData(page);
+    const meta = data.nav ?? {};
+    if (meta.hidden) {
+      continue;
+    }
+
+    const sectionTitle = meta.section ?? titleFromPath(docsRoot);
+    const section = sections.get(sectionTitle) ?? {
+      title: sectionTitle,
+      order: Infinity,
+      item: { text: escapeHtml(sectionTitle) },
+      children: [],
     };
-    section.order = Math.min(section.order, page.sectionOrder);
-    insertPage(section.items, page, docsRoot);
-    sections.set(page.section, section);
+    section.order = Math.min(section.order, meta.sectionOrder ?? 100);
+    sections.set(sectionTitle, section);
+
+    const title =
+      meta.title ??
+      data.title ??
+      firstHeading(data) ??
+      titleFromPath(sourcePath(page));
+    const badge =
+      typeof meta.badge === "string" ? { text: meta.badge } : meta.badge;
+    folderGroup(section, folders(sourcePath(page), docsRoot)).children.push({
+      title,
+      order: meta.order ?? 100,
+      item: {
+        text: `${escapeHtml(title)}${badge ? ` ${renderBadge(badge)}` : ""}`,
+        // The prev/next links show the title without the badge.
+        docFooterText: badge ? escapeHtml(title) : undefined,
+        link: data.url,
+        collapsed: meta.collapsed,
+      },
+      children: [],
+    });
   }
 
-  return [...sections.values()]
-    .sort((left, right) =>
-      left.order - right.order || left.title.localeCompare(right.title)
-    )
-    .map((section) => ({
-      ...section,
-      items: sortItems(assignLevels(section.items, 1)),
-    }));
+  return toItems([...sections.values()]);
 }
 
-export function docsSidebarPages(
-  pages: Array<{ page: ThemePage; sourcePath: string }>,
-  docsRoot: string,
-) {
-  return pages
-    .filter((entry) => isDocsPath(entry.sourcePath, docsRoot))
-    .filter((entry) => (entry.page.data as DocsData).nav?.hidden !== true)
-    .map((entry) => toSidebarPage(entry.page, docsRoot));
+/** Subfolders between the docs root and the page: `/guide/a/b/page.md` → `["a", "b"]`. */
+function folders(path: string, docsRoot: string): string[] {
+  return path.slice(`/${docsRoot}/`.length).split("/").slice(0, -1);
 }
 
-export function flattenSidebar(sections: SidebarSection[]): SidebarPage[] {
-  return sections.flatMap((section) => flattenItems(section.items));
-}
-
-function insertPage(
-  items: SidebarPage[],
-  page: SidebarPage,
-  docsRoot: string,
-) {
-  const parts = relativeDocsParts(page.sourcePath ?? "", docsRoot);
-  if (parts.length <= 1) {
-    items.push(page);
-    return;
-  }
-
-  let current = items;
-  for (const folder of parts.slice(0, -1)) {
-    let group = current.find((item) =>
-      !item.url && item.title === titleFromPath(folder)
+function folderGroup(parent: SortedItem, path: string[]): SortedItem {
+  let current = parent;
+  for (const folder of path) {
+    const title = titleFromPath(folder);
+    let group = current.children.find(
+      (child) => !child.item.link && child.title === title,
     );
     if (!group) {
       group = {
-        title: titleFromPath(folder),
-        section: page.section,
-        sectionOrder: page.sectionOrder,
+        title,
         order: 100,
-        level: 1,
-        collapsed: false,
+        item: { text: escapeHtml(title) },
         children: [],
       };
-      current.push(group);
+      current.children.push(group);
     }
-    current = group.children;
+    current = group;
+  }
+  return current;
+}
+
+function toItems(items: SortedItem[]): SidebarItem[] {
+  return items
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.title.localeCompare(right.title),
+    )
+    .map(({ item, children }) =>
+      children.length ? { ...item, items: toItems(children) } : item,
+    );
+}
+
+/**
+ * The sidebar for a page URL, like VitePress's `getSidebar`: the longest
+ * matching path prefix wins, `base` prefixes links, and links are normalized
+ * to the site's pretty URLs.
+ */
+export function resolveSidebar(
+  sidebar: Sidebar | undefined,
+  url: string,
+): SidebarItem[] {
+  if (!sidebar) {
+    return [];
+  }
+  if (Array.isArray(sidebar)) {
+    return resolveItems(sidebar);
   }
 
-  current.push(page);
+  const prefix = Object.keys(sidebar)
+    .sort((left, right) => right.split("/").length - left.split("/").length)
+    .find((path) => url.startsWith(withLeadingSlash(path)));
+  const config = prefix ? sidebar[prefix] : [];
+  return Array.isArray(config)
+    ? resolveItems(config)
+    : resolveItems(config.items, config.base);
 }
 
-function relativeDocsParts(path: string, docsRoot: string) {
-  const prefix = docsUrlPrefix(docsRoot);
-  const relative = path.startsWith(prefix) ? path.slice(prefix.length) : path;
-  return relative.replace(/\.md$/, "").split("/").filter(Boolean);
+/** Every sidebar in the config, resolved: one for a list, one per prefix otherwise. */
+export function resolveSidebars(sidebar: Sidebar | undefined): SidebarItem[][] {
+  if (!sidebar) {
+    return [];
+  }
+  return Array.isArray(sidebar)
+    ? [resolveItems(sidebar)]
+    : Object.keys(sidebar).map((prefix) =>
+        resolveSidebar(sidebar, withLeadingSlash(prefix)),
+      );
 }
 
-function assignLevels(
-  items: SidebarPage[],
-  level: number,
-): SidebarPage[] {
-  return items.map((item) => ({
-    ...item,
-    level,
-    children: assignLevels(item.children, level + 1),
-  }));
+function resolveItems(
+  items: SidebarItem[],
+  parentBase?: string,
+): SidebarItem[] {
+  return items.map((source) => {
+    const item = { ...source };
+    const base = item.base || parentBase;
+    if (item.link && !isExternal(item.link)) {
+      const link = base
+        ? base + item.link.replace(/^\//, base.endsWith("/") ? "" : "/")
+        : item.link;
+      item.link = normalizeHref(link);
+    }
+    if (item.items) {
+      item.items = resolveItems(item.items, base);
+    }
+    return item;
+  });
 }
 
-function sortItems(items: SidebarPage[]): SidebarPage[] {
-  return items
-    .sort((left, right) =>
-      left.order - right.order || left.title.localeCompare(right.title)
-    )
-    .map((item) => ({
-      ...item,
-      children: sortItems(item.children),
-    }));
+function withLeadingSlash(path: string) {
+  return path.startsWith("/") ? path : `/${path}`;
 }
 
-function flattenItems(items: SidebarPage[]): SidebarPage[] {
+/**
+ * Groups top-level items like VitePress's `getSidebarGroups`: items with
+ * children are groups, and runs of plain links share an untitled group.
+ */
+export function sidebarGroups(sidebar: SidebarItem[]): SidebarItem[] {
+  const groups: SidebarItem[] = [];
+  let lastGroup = 0;
+  for (const item of sidebar) {
+    if (item.items) {
+      lastGroup = groups.push(item);
+      continue;
+    }
+    groups[lastGroup] ??= { items: [] };
+    groups[lastGroup].items!.push(item);
+  }
+  return groups;
+}
+
+/** The sidebar's links in reading order, like VitePress's `getFlatSideBarLinks`. */
+export function sidebarLinks(items: SidebarItem[]): SidebarLink[] {
   return items.flatMap((item) => [
-    ...(item.url ? [item] : []),
-    ...flattenItems(item.children),
+    ...(item.text && item.link
+      ? [
+          {
+            text: item.text,
+            link: item.link,
+            docFooterText: item.docFooterText,
+            rel: item.rel,
+            target: item.target,
+          },
+        ]
+      : []),
+    ...sidebarLinks(item.items ?? []),
   ]);
 }
 
-function sectionFromPath(path: string, docsRoot: string): string {
-  if (isDocsPath(path, docsRoot)) {
-    return titleFromPath(docsRoot);
-  }
+/** Drops repeated links, keeping the first, like VitePress's prev/next candidates. */
+export function uniqueLinks(links: SidebarLink[]): SidebarLink[] {
+  const seen = new Set<string>();
+  return links.filter((item) => !seen.has(item.link) && seen.add(item.link));
+}
 
-  const parts = path.split("/").filter(Boolean);
-  return parts.length > 1 ? titleFromPath(parts[0]) : "Guide";
+/** Whether a sidebar link points at the page (ignoring its hash). */
+export function isActiveLink(link: string | undefined, url: string): boolean {
+  return Boolean(link) && !isExternal(link!) && link!.split("#")[0] === url;
 }

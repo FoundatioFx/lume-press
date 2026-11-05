@@ -28,7 +28,7 @@ public sealed class ThemeOptions
 ```
 
 ```bash
-deno task docs:build
+vp run docs:build
 ```
 
 ## Callouts

@@ -1,444 +1,221 @@
+import { statSync } from "node:fs";
+import { join } from "node:path";
+import basePath from "@lumeland/plugin-base-path";
+import checkUrls from "@lumeland/plugin-check-urls";
+import markdown from "@lumeland/plugin-markdown";
+import metas from "@lumeland/plugin-metas";
+import sitemap from "@lumeland/plugin-sitemap";
+import { readThemeAsset, themeAssets } from "./assets.ts";
+import { expandAuthoringDirectives } from "./authoring.ts";
+import { loadPageLanguages } from "./code.ts";
 import {
-  interRomanLatinWoff2Base64,
-  siteCss,
-  siteJs,
-} from "./assets/bundled.ts";
-import { createGeneratedPage } from "./lume.ts";
-import type { ThemePage, ThemeSite } from "./lume.ts";
-
-import { prepareMarkdownSource } from "./authoring.ts";
-import { applyCodeLineAnnotations, highlightCodeBlocks } from "./code.ts";
+  escapeAttribute,
+  escapeHtml,
+  extractHeadings,
+  inlineJson,
+} from "./html.ts";
+import { applyLastUpdated } from "./last-updated.ts";
+import { createGeneratedPage, type ThemePage, type ThemeSite } from "./lume.ts";
 import { markdownOptions } from "./markdown.ts";
+import { pageMetas } from "./metas.ts";
 import {
   buildSidebar,
-  docsSidebarPages,
-  flattenSidebar,
+  resolveSidebar,
+  resolveSidebars,
+  sidebarGroups,
 } from "./navigation.ts";
+import { resolveOptions } from "./options.ts";
 import {
-  buildSearchIndex,
-  renderDocument,
   renderLlmsFull,
   renderLlmsIndex,
   renderMarkdownMirror,
-  renderNotFound,
-} from "./render.ts";
+} from "./outputs/llms.ts";
+import { buildSearchIndex } from "./outputs/search.ts";
+import { isMarkdownPage, pageData, readLayout, sourcePath } from "./pages.ts";
+import { transformBadgeTags } from "./render/badge.ts";
+import { socialIconStylesUrl } from "./render/head.ts";
+import { renderDocument, renderNotFound } from "./render/layout.ts";
 import type {
   ContentEntry,
-  DocsData,
   FoundatioThemeOptions,
   ResolvedFoundatioThemeOptions,
-  ThemeLabels,
 } from "./types.ts";
 import {
-  docsUrlPrefix,
-  extractHeadings,
   isDocsPath,
-  isMarkdownPage,
   legacyHtmlUrl,
-  normalizeDocsRoot,
+  markdownMirrorUrl,
   normalizeInternalLinks,
-  sourcePath,
-  transformBadgeTags,
-} from "./utils.ts";
+} from "./urls.ts";
 
-export type { FoundatioThemeOptions } from "./types.ts";
+export type {
+  Action,
+  Badge,
+  DocsData,
+  Feature,
+  FoundatioThemeOptions,
+  HeadEntry,
+  HomeSection,
+  NavLink,
+  NavMeta,
+  SocialLink,
+  ThemeLabels,
+} from "./types.ts";
 
-const bundledAssets: Record<string, string | Uint8Array> = {
-  "site.css": siteCss,
-  "site.js": siteJs,
-  "inter-roman-latin.woff2": base64ToBytes(interRomanLatinWoff2Base64),
-};
-
+/** Lume plugin that renders markdown pages like the VitePress default theme. */
 export default function foundatio(
   options: FoundatioThemeOptions,
 ): (site: ThemeSite) => void {
-  const theme = resolveOptions(options);
-
-  return (site: ThemeSite) => {
-    applyFoundatioTheme(site, theme);
+  return (site) => {
+    // Lume's default location is a localhost placeholder, not a real site URL.
+    const siteLocation = site.options.location;
+    applyTheme(
+      site,
+      resolveOptions({
+        ...options,
+        location:
+          options.location ??
+          (siteLocation.hostname === "localhost" ? undefined : siteLocation),
+      }),
+    );
   };
 }
 
-export { foundatio as foundatioTheme };
-
-function applyFoundatioTheme(
-  site: ThemeSite,
-  theme: ResolvedFoundatioThemeOptions,
-) {
-  let searchContentPages: ContentEntry[] = [];
+function applyTheme(site: ThemeSite, theme: ResolvedFoundatioThemeOptions) {
+  // Markdown after snippets and includes are expanded, for mirrors and LLM files.
+  const expandedMarkdown = new WeakMap<ThemePage, string>();
+  const srcDir = site.src();
 
   site.ignore(...theme.ignore);
-  site.use(theme.lume.markdown(markdownOptions(theme)));
+  site.use(markdown(markdownOptions(theme)));
 
-  if (theme.rawPagesDir && directoryExists(theme.rawPagesDir)) {
+  if (
+    theme.rawPagesDir &&
+    statSync(join(srcDir, theme.rawPagesDir), {
+      throwIfNoEntry: false,
+    })?.isDirectory()
+  ) {
     site.copy(theme.rawPagesDir, ".");
   }
 
-  site.preprocess([".md"], (pages) => {
+  site.preprocess([".md"], async (pages) => {
     for (const page of pages) {
-      const data = page.data as DocsData;
-      normalizeLayout(data);
+      const data = pageData(page);
+      readLayout(data);
       applyLastUpdated(page, theme);
-      prepareMarkdownSource(page, theme);
+
+      // Markdown pages keep their source in `data.content` until rendered.
+      const file = page.src.entry?.src;
+      if (typeof data.content === "string" && file) {
+        const source = expandAuthoringDirectives(
+          data.content,
+          file,
+          srcDir,
+          theme,
+        );
+        data.content = source;
+        expandedMarkdown.set(page, source);
+        if (theme.codeHighlight) {
+          await loadPageLanguages(source, theme.codeHighlight);
+        }
+      }
     }
   });
 
   site.process([".html"], async (pages, allPages) => {
+    const emit = (url: string, content: string | Uint8Array) =>
+      allPages.push(
+        createGeneratedPage({ url, content, unlisted: true, search: false }),
+      );
+
     if (theme.assets) {
-      await emitThemeAssets(pages, allPages, theme);
-    }
-
-    const contentPages: ContentEntry[] = pages
-      .filter((page) => isMarkdownPage(page))
-      .map((page) => {
-        const data = page.data as DocsData;
-        const markdown = readOriginalSource(page);
-        const html = transformBadgeTags(
-          normalizeInternalLinks(page.text, data.url),
-        );
-        data.headings = extractHeadings(html);
-        return {
-          page,
-          data,
-          sourcePath: sourcePath(page),
-          html,
-          markdown,
-        };
-      });
-
-    searchContentPages = contentPages;
-    if (theme.codeHighlight) {
-      await highlightContentEntries(contentPages, theme);
-    }
-
-    const homeEntry = contentPages.find((entry) =>
-      entry.data.url === "/index.html" || entry.data.url === "/"
-    );
-    const sidebarPages = docsSidebarPages(contentPages, theme.docsRoot);
-    const sidebar = buildSidebar(sidebarPages, theme.docsRoot);
-    const flatSidebarPages = flattenSidebar(sidebar);
-
-    if (theme.markdownMirrors) {
-      for (
-        const entry of contentPages.filter((entry) =>
-          isDocsPath(entry.sourcePath, theme.docsRoot)
-        )
-      ) {
-        allPages.push(createGeneratedPage(pages, {
-          url: markdownMirrorUrlForPage(entry.data.url),
-          content: renderMarkdownMirror(entry),
-          unlisted: true,
-          search: false,
-        }));
+      for (const name of themeAssets) {
+        emit(`/assets/${name}`, await readThemeAsset(theme, name));
       }
     }
 
-    for (const entry of contentPages) {
+    const entries: ContentEntry[] = pages.filter(isMarkdownPage).map((page) => {
+      const data = pageData(page);
+      const html = transformBadgeTags(
+        normalizeInternalLinks(page.text, data.url),
+      );
+      data.headings = extractHeadings(html);
+      return {
+        page,
+        data,
+        sourcePath: sourcePath(page),
+        html,
+        markdown: expandedMarkdown.get(page) ?? "",
+      };
+    });
+
+    const docsEntries = entries.filter((entry) =>
+      isDocsPath(entry.sourcePath, theme.docsRoot),
+    );
+    const sidebar = theme.sidebar ?? {
+      [`/${theme.docsRoot}/`]: buildSidebar(
+        docsEntries.map((entry) => entry.page),
+        theme.docsRoot,
+      ),
+    };
+
+    for (const entry of entries) {
+      entry.data.metas = pageMetas(entry.data, theme);
       entry.page.content = renderDocument({
         page: entry.page,
         body: entry.html,
-        sidebar,
-        flatGuidePages: flatSidebarPages,
+        sidebar: resolveSidebar(sidebar, entry.data.url),
         theme,
       });
+      addImageDefaults(entry.page);
     }
 
+    if (theme.socialIconStyles) {
+      emit(socialIconStylesUrl, theme.socialIconStyles);
+    }
+    if (theme.search) {
+      emit("/search-index.json", JSON.stringify(buildSearchIndex(entries)));
+    }
+    if (theme.markdownMirrors) {
+      for (const entry of docsEntries) {
+        emit(markdownMirrorUrl(entry.data.url), renderMarkdownMirror(entry));
+      }
+    }
     if (theme.llms) {
-      allPages.push(createGeneratedPage(pages, {
-        url: "/llms.txt",
-        content: renderLlmsIndex(
-          flatSidebarPages,
-          theme,
-          homeEntry?.data,
-        ),
-        unlisted: true,
-        search: false,
-      }));
-
-      allPages.push(createGeneratedPage(pages, {
-        url: "/llms-full.txt",
-        content: renderLlmsFull(contentPages, flatSidebarPages, theme),
-        unlisted: true,
-        search: false,
-      }));
+      const home = entries.find((entry) => entry.data.url === "/")?.data;
+      const groups = resolveSidebars(sidebar).flatMap(sidebarGroups);
+      emit("/llms.txt", renderLlmsIndex(groups, theme, home));
+      emit("/llms-full.txt", renderLlmsFull(entries, groups));
     }
-
     for (const [from, to] of Object.entries(theme.redirects)) {
-      allPages.push(createGeneratedPage(pages, {
-        url: from,
-        content: renderRedirect(to),
-        unlisted: true,
-        search: false,
-      }));
+      emit(from, renderRedirect(to));
     }
-
-    for (const entry of contentPages) {
+    for (const entry of entries) {
       const legacyUrl = legacyHtmlUrl(entry.data.url);
-      if (!legacyUrl) {
-        continue;
+      if (legacyUrl) {
+        emit(legacyUrl, renderRedirect(entry.data.url));
       }
-
-      allPages.push(createGeneratedPage(pages, {
-        url: legacyUrl,
-        content: renderRedirect(entry.data.url),
-        unlisted: true,
-        search: false,
-      }));
     }
-
-    allPages.push(createGeneratedPage(pages, {
-      url: "/404.html",
-      content: renderNotFound(theme),
-      unlisted: true,
-      search: false,
-    }));
+    emit("/404.html", renderNotFound(theme));
   });
 
-  site.process([".html"], (pages, allPages) => {
-    if (!theme.search) {
-      return;
-    }
-
-    allPages.push(createGeneratedPage(pages, {
-      url: "/search-index.json",
-      content: JSON.stringify(
-        buildSearchIndex(searchContentPages, theme),
-        null,
-        2,
-      ),
-      unlisted: true,
-      search: false,
-    }));
-  });
-
-  site.use(theme.lume.metas());
-  site.process([".html"], (pages) => {
-    for (const page of pages) {
-      addImageDefaults(page);
-    }
-  });
-
+  site.use(metas());
   if (theme.checkUrls) {
-    site.use(theme.lume.checkUrls(theme.checkUrls));
+    site.use(checkUrls(theme.checkUrls));
   }
-
   if (theme.sitemap) {
-    site.use(theme.lume.sitemap(theme.sitemap));
+    site.use(sitemap(theme.sitemap));
   }
-
   if (theme.basePath !== "/") {
-    site.process([".html"], (pages) => {
-      for (const page of pages) {
-        applyBasePathCanonical(page, theme);
-      }
-    });
-    site.use(theme.lume.basePath());
+    site.use(basePath());
   }
 }
 
-async function emitThemeAssets(
-  pages: ThemePage[],
-  allPages: ThemePage[],
-  theme: ResolvedFoundatioThemeOptions,
-) {
-  allPages.push(createGeneratedPage(pages, {
-    url: "/assets/site.css",
-    content: await readThemeTextAsset(theme, "site.css"),
-    unlisted: true,
-    search: false,
-  }));
-
-  allPages.push(createGeneratedPage(pages, {
-    url: "/assets/site.js",
-    content: await readThemeTextAsset(theme, "site.js"),
-    unlisted: true,
-    search: false,
-  }));
-
-  allPages.push(createGeneratedPage(pages, {
-    url: "/assets/inter-roman-latin.woff2",
-    content: await readThemeBinaryAsset(theme, "inter-roman-latin.woff2"),
-    unlisted: true,
-    search: false,
-  }));
-}
-
-async function readThemeTextAsset(
-  theme: ResolvedFoundatioThemeOptions,
-  name: string,
-): Promise<string> {
-  if (!theme.assetBaseUrl) {
-    const asset = bundledAssets[name];
-    if (typeof asset === "string") {
-      return asset;
-    }
-    throw new Error(`Bundled Foundatio theme asset ${name} is not text`);
-  }
-
-  const response = await fetchThemeAsset(theme, name);
-  return await response.text();
-}
-
-async function readThemeBinaryAsset(
-  theme: ResolvedFoundatioThemeOptions,
-  name: string,
-): Promise<Uint8Array> {
-  if (!theme.assetBaseUrl) {
-    const asset = bundledAssets[name];
-    if (asset instanceof Uint8Array) {
-      return asset;
-    }
-    throw new Error(`Bundled Foundatio theme asset ${name} is not binary`);
-  }
-
-  const response = await fetchThemeAsset(theme, name);
-  return new Uint8Array(await response.arrayBuffer());
-}
-
-async function fetchThemeAsset(
-  theme: ResolvedFoundatioThemeOptions,
-  name: string,
-): Promise<Response> {
-  if (!theme.assetBaseUrl) {
-    throw new Error(`Foundatio theme asset ${name} is not available`);
-  }
-
-  const url = new URL(name, theme.assetBaseUrl);
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(
-      `Unable to load Foundatio theme asset ${url.href}: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  return response;
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value.trim());
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function highlightContentEntries(
-  entries: ContentEntry[],
-  theme: ResolvedFoundatioThemeOptions,
-) {
-  for (const entry of entries) {
-    entry.page.content = entry.html;
-  }
-
-  await highlightCodeBlocks(entries.map((entry) => entry.page), theme);
-  for (const entry of entries) {
-    applyCodeLineAnnotations(entry.page);
-    entry.html = entry.page.document.body.innerHTML;
-  }
-}
-
-function markdownMirrorUrlForPage(url: string) {
-  return legacyHtmlUrl(url)?.replace(/\.html$/, ".md") ??
-    `${url.replace(/\/$/, "")}.md`;
-}
-
-function readOriginalSource(page: ThemePage): string {
-  return page.src.entry ? Deno.readTextFileSync(page.src.entry.src) : page.text;
-}
-
-function normalizeLayout(data: DocsData) {
-  if (data.layout === undefined) {
-    return;
-  }
-
-  if (data.layout === false) {
-    data.docsLayout = false;
-  } else if (["home", "docs", "page"].includes(data.layout)) {
-    data.docsLayout = data.layout as "home" | "docs" | "page";
-  }
-  delete data.layout;
-}
-
-function applyLastUpdated(
-  page: ThemePage,
-  theme: ResolvedFoundatioThemeOptions,
-) {
-  if (!theme.lastUpdated) {
-    return;
-  }
-
-  const data = page.data as DocsData;
-  const existing = coerceDate(data.lastmod ?? data.date);
-  const date = existing ??
-    (theme.lastUpdated.git
-      ? gitLastUpdated(sourcePath(page))
-      : fileModified(sourcePath(page)));
-
-  if (!date) {
-    return;
-  }
-
-  data.lastUpdatedDate = date;
-  data.lastmod ??= date;
-  data.date ??= date;
-}
-
-const gitLastUpdatedCache = new Map<string, Date | undefined>();
-
-function gitLastUpdated(path: string): Date | undefined {
-  const normalizedPath = path.replace(/^\//, "");
-  if (gitLastUpdatedCache.has(normalizedPath)) {
-    return gitLastUpdatedCache.get(normalizedPath);
-  }
-  try {
-    const output = new Deno.Command("git", {
-      args: ["log", "-1", "--format=%cI", "--", normalizedPath],
-    }).outputSync();
-    if (!output.success) {
-      gitLastUpdatedCache.set(normalizedPath, undefined);
-      return undefined;
-    }
-
-    const value = new TextDecoder().decode(output.stdout).trim();
-    const date = value ? new Date(value) : undefined;
-    gitLastUpdatedCache.set(normalizedPath, date);
-    return date;
-  } catch {
-    gitLastUpdatedCache.set(normalizedPath, undefined);
-    return undefined;
-  }
-}
-
-function fileModified(path: string): Date | undefined {
-  try {
-    return Deno.statSync(path.replace(/^\//, "")).mtime ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function coerceDate(value: Date | string | undefined): Date | undefined {
-  if (value instanceof Date) {
-    return value;
-  }
-
-  if (!value) {
-    return undefined;
-  }
-
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? undefined : date;
-}
-
+/** Images decode off the main thread and, below the fold, load lazily. */
 function addImageDefaults(page: ThemePage) {
-  for (
-    const image of page.document.querySelectorAll<HTMLImageElement>("img")
-  ) {
+  for (const image of page.document.querySelectorAll("img")) {
     if (!image.hasAttribute("decoding")) {
       image.setAttribute("decoding", "async");
     }
-
     if (
       !image.hasAttribute("loading") &&
       !image.classList.contains("image-src") &&
@@ -449,216 +226,10 @@ function addImageDefaults(page: ThemePage) {
   }
 }
 
-function applyBasePathCanonical(
-  page: ThemePage,
-  theme: ResolvedFoundatioThemeOptions,
-) {
-  if (!theme.location) {
-    return;
-  }
-
-  const data = page.data as DocsData;
-  if (data.canonical === false || typeof data.canonical === "string") {
-    return;
-  }
-
-  const canonical = page.document.querySelector<HTMLLinkElement>(
-    'link[rel="canonical"]',
-  );
-  if (!canonical) {
-    return;
-  }
-
-  const base = theme.basePath.replace(/\/$/, "");
-  canonical.setAttribute(
-    "href",
-    new URL(`${base}${data.url}`, theme.location).href,
-  );
-}
-
+/** A static redirect page that keeps the URL hash. */
 function renderRedirect(target: string) {
-  const safeTarget = target.replace(/"/g, "%22");
-  const jsTarget = JSON.stringify(safeTarget);
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeTarget}"><link rel="canonical" href="${safeTarget}"><title>Redirecting...</title><script>const target=${jsTarget};window.location.replace(target+(target.includes("#")?"":window.location.hash));</script></head><body><p>Redirecting to <a href="${safeTarget}">${safeTarget}</a>.</p></body></html>`;
+  const href = escapeAttribute(target);
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${href}"><link rel="canonical" href="${href}"><title>Redirecting...</title><script>const target=${inlineJson(
+    target,
+  )};window.location.replace(target+(target.includes("#")?"":window.location.hash));</script></head><body><p>Redirecting to <a href="${href}">${escapeHtml(target)}</a>.</p></body></html>`;
 }
-
-function resolveOptions(
-  options: FoundatioThemeOptions,
-): ResolvedFoundatioThemeOptions {
-  const docsRoot = normalizeDocsRoot(options.docsRoot ?? "guide");
-  const label = options.brand?.label ?? options.title;
-  const location = options.location
-    ? typeof options.location === "string"
-      ? new URL(options.location)
-      : options.location
-    : undefined;
-  const base = normalizeBasePath(
-    options.basePath ?? location?.pathname ?? "/",
-  );
-  const codeHighlightOptions = options.codeHighlight === false
-    ? false
-    : options.codeHighlight ?? {};
-  const lastUpdated = options.lastUpdated === undefined ||
-      options.lastUpdated === false
-    ? false
-    : {
-      git: typeof options.lastUpdated === "object"
-        ? options.lastUpdated.git ?? false
-        : false,
-      text: typeof options.lastUpdated === "object"
-        ? options.lastUpdated.text ?? defaultLabels.lastUpdated
-        : defaultLabels.lastUpdated,
-    };
-  const defaultSitemap = lastUpdated
-    ? { items: { lastmod: "=lastmod" } }
-    : { items: { lastmod: "__docsLastmodDisabled" } };
-  const assets = options.assets !== false;
-  const assetBaseUrl =
-    typeof options.assets === "object" && options.assets.baseUrl
-      ? new URL(options.assets.baseUrl)
-      : undefined;
-
-  return {
-    title: options.title,
-    description: options.description,
-    location,
-    basePath: base,
-    docsRoot,
-    lume: options.lume,
-    head: options.head ?? [],
-    metas: {
-      robots: true,
-      ...(options.metas ?? {}),
-    },
-    labels: {
-      ...defaultLabels,
-      ...(options.labels ?? {}),
-    },
-    brand: {
-      label,
-      logoLight: options.brand?.logoLight ?? options.brand?.icon ?? "",
-      logoDark: options.brand?.logoDark ?? options.brand?.logoLight ??
-        options.brand?.icon ?? "",
-      icon: options.brand?.icon ?? options.brand?.logoLight ?? "",
-      themeColor: options.brand?.themeColor ?? "#3c8772",
-    },
-    nav: options.nav ?? [
-      { text: "Guide", link: docsUrlPrefix(docsRoot).replace(/\/$/, "") },
-    ],
-    social: options.social ?? [],
-    footer: {
-      message: options.footer?.message ??
-        "Released under the MIT License.",
-      copyright: options.footer?.copyright ?? "",
-    },
-    editLink: options.editLink
-      ? {
-        text: options.editLink.text ?? defaultLabels.editLink,
-        pattern: options.editLink.pattern,
-      }
-      : undefined,
-    lastUpdated,
-    outline: {
-      level: options.outline?.level ?? 2,
-      label: options.outline?.label ?? defaultLabels.outline,
-    },
-    sitemap: options.sitemap === false ? false : {
-      ...defaultSitemap,
-      ...(options.sitemap === true || options.sitemap === undefined
-        ? {}
-        : options.sitemap),
-    },
-    checkUrls: options.checkUrls === false ? false : {
-      anchors: true,
-      throw: true,
-      ...(options.checkUrls === true || options.checkUrls === undefined
-        ? {}
-        : options.checkUrls),
-    },
-    codeHighlight: codeHighlightOptions === false ? false : {
-      themes: {
-        light: codeHighlightOptions.themes?.light ?? "github-light",
-        dark: codeHighlightOptions.themes?.dark ?? "github-dark",
-      },
-      langs: codeHighlightOptions.langs ?? defaultCodeHighlightLanguages,
-    },
-    code: {
-      lineNumbers: options.code?.lineNumbers ?? false,
-    },
-    snippets: options.snippets === false ? false : {
-      docsRoot: options.snippets?.docsRoot ?? ".",
-      repoRoot: options.snippets?.repoRoot ?? "..",
-      aliases: options.snippets?.aliases ?? {},
-    },
-    redirects: options.redirects ?? {},
-    llms: options.llms ?? true,
-    markdownMirrors: options.markdownMirrors ?? true,
-    search: options.search ?? true,
-    assets,
-    assetBaseUrl,
-    rawPagesDir: options.rawPagesDir === undefined
-      ? "pages"
-      : options.rawPagesDir,
-    ignore: [
-      ".build",
-      ".npmrc",
-      ".vitepress",
-      "_lume",
-      "_site",
-      "_theme",
-      "node_modules",
-      "package-lock.json",
-      "package.json",
-      "README.md",
-      ...(options.ignore ?? []),
-    ],
-  };
-}
-
-function normalizeBasePath(path: string) {
-  const normalized = `/${path}`.replace(/\/+/g, "/").replace(/\/$/, "");
-  return normalized === "" ? "/" : `${normalized}/`.replace(/\/\/+/g, "/");
-}
-
-function directoryExists(path: string): boolean {
-  try {
-    return Deno.statSync(path).isDirectory;
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
-      return false;
-    }
-    throw error;
-  }
-}
-
-const defaultCodeHighlightLanguages = [
-  "csharp",
-  "shellscript",
-  "powershell",
-  "json",
-  "xml",
-  "html",
-  "css",
-  "javascript",
-  "typescript",
-  "yaml",
-  "markdown",
-  "text",
-];
-const defaultLabels: ThemeLabels = {
-  search: "Search",
-  searchPlaceholder: "Search",
-  searchNoResults: "No results found.",
-  searchRecent: "Recent searches",
-  searchClose: "Close search",
-  menu: "Menu",
-  returnTop: "Return to top",
-  outline: "On this page",
-  editLink: "Edit this page",
-  lastUpdated: "Last updated",
-  previousPage: "Previous page",
-  nextPage: "Next page",
-  notFoundTitle: "Page Not Found",
-  notFoundMessage: "The page you are looking for does not exist.",
-  notFoundLink: "Return home",
-};

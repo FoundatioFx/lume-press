@@ -24,29 +24,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          deno-version: v2.x
-
-      - name: Cache Dependencies
-        shell: bash
-        run: |
-          lume_cli=$(deno eval "const config = JSON.parse(await Deno.readTextFile('docs/deno.json')); console.log(config.imports['lume/'] + 'cli.ts');")
-
-          for attempt in 1 2 3; do
-            if deno cache mod.ts tests/theme_test.ts && \
-              deno cache -c docs/deno.json "$lume_cli" docs/_config.ts; then
-              exit 0
-            fi
-            sleep $((attempt * 10))
-          done
-
-          deno cache mod.ts tests/theme_test.ts
-          deno cache -c docs/deno.json "$lume_cli" docs/_config.ts
+          node-version: "24"
+          cache: true
 
       - name: Build Docs
-        run: deno task -c docs/deno.json build
+        run: vp run docs:build
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
@@ -68,4 +53,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
-

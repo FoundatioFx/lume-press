@@ -1,0 +1,70 @@
+{
+  "name": "@foundatiofx/lume-theme",
+  "version": "0.2.0",
+  "description": "A Lume theme for Foundatio technical sites.",
+  "keywords": [
+    "lume-theme"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FoundatioFx/lume-theme"
+  },
+  "homepage": "https://theme.foundatio.dev/",
+  "type": "module",
+  "files": [
+    "build",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./build/mod.d.ts",
+      "import": "./build/mod.js"
+    }
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "vp pack",
+    "check": "vp check",
+    "docs:build": "cd docs && lume build",
+    "docs:serve": "cd docs && lume build --serve --port 5173",
+    "fmt": "vp fmt",
+    "test": "vp test run",
+    "prepack": "vp pack",
+    "sync:vitepress": "vpx scripts/sync-vitepress.ts"
+  },
+  "dependencies": {
+    "@iconify-json/simple-icons": "^1.2.101",
+    "@lumeland/plugin-base-path": "^1.0.0",
+    "@lumeland/plugin-check-urls": "^1.0.0",
+    "@lumeland/plugin-markdown": "^1.0.0",
+    "@lumeland/plugin-metas": "^1.0.0",
+    "@lumeland/plugin-sitemap": "^1.0.0",
+    "@mdit/plugin-anchor": "^2.3.0",
+    "@mdit/plugin-attrs": "^1.4.0",
+    "@mdit/plugin-container": "^2.1.0",
+    "@mdit/plugin-emoji": "^1.2.4",
+    "@mdit/plugin-footnote": "^1.1.4",
+    "@mdit/plugin-tasklist": "^1.2.0",
+    "@shikijs/transformers": "^4.6.0",
+    "markdown-it-cjk-friendly": "^3.0.0",
+    "shiki": "^4.6.0"
+  },
+  "peerDependencies": {
+    "@lumeland/core": "^1.0.3"
+  },
+  "devDependencies": {
+    "@lumeland/lume": "^4.0.1",
+    "@types/node": "^24.0.0",
+    "markdown-it": "^15.0.3",
+    "minisearch": "^7.2.0",
+    "postcss": "^8.5.32",
+    "typescript": "^7.0.2",
+    "vite-plus": "catalog:",
+    "vitepress": "2.0.0-alpha.21"
+  },
+  "packageManager": "pnpm@12.16.1"
+}

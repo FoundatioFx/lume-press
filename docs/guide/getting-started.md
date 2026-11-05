@@ -15,18 +15,23 @@ Foundatio Theme is a Lume theme for technical project sites. It keeps the site c
 
 ## Install the package
 
-Use the JSR package from a Lume site:
+Lume 4 runs on Node 24 or later. Install the theme next to Lume:
+
+```bash
+pnpm add @lumeland/lume @foundatiofx/lume-theme
+```
+
+Then register it in `_config.ts`:
 
 ```ts
-import lume from "lume/mod.ts";
-import foundatio from "jsr:@foundatiofx/lume-theme";
+import lume from "@lumeland/lume";
+import foundatio from "@foundatiofx/lume-theme";
 
 const site = lume({ prettyUrls: true });
 site.use(foundatio({
   title: "My Project",
   description: "Project documentation",
   docsRoot: "guide",
-  lume: { basePath, checkUrls, markdown, metas, sitemap },
 }));
 
 export default site;
@@ -44,6 +49,21 @@ nav:
   sectionOrder: 1
   order: 1
 ---
+```
+
+To write the sidebar by hand instead, pass `sidebar` to the theme. It takes the same shape as VitePress's `themeConfig.sidebar`: one list of items, or one list per path prefix.
+
+```ts
+foundatio({
+  sidebar: {
+    "/guide/": [
+      {
+        text: "Introduction",
+        items: [{ text: "Getting Started", link: "/guide/getting-started" }],
+      },
+    ],
+  },
+});
 ```
 
 ::: tip

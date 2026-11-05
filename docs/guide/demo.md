@@ -52,6 +52,7 @@ Details blocks should render as expandable content and preserve nested markdown.
 ```ts
 export const expanded = true;
 ```
+
 :::
 
 ## Code Blocks
@@ -65,8 +66,8 @@ export default {
 ```
 
 ```ts {5-8}
-import lume from "lume/mod.ts";
-import foundatio from "jsr:@foundatiofx/lume-theme";
+import lume from "@lumeland/lume";
+import foundatio from "@foundatiofx/lume-theme";
 
 // Keep theme setup in Lume config.
 const site = lume({ prettyUrls: true });
@@ -115,6 +116,7 @@ export default {
 ```
 
 ## Code Groups
+
 Code group tabs use the same filename-based icon convention as VitePress.
 
 ::: code-group
@@ -127,7 +129,7 @@ export default {
 ```
 
 ```ts [config.ts]
-import type { FoundatioThemeOptions } from "jsr:@foundatiofx/lume-theme";
+import type { FoundatioThemeOptions } from "@foundatiofx/lume-theme";
 
 export default {
   title: "Foundatio Theme",
@@ -140,8 +142,8 @@ export default {
 ::: code-group
 
 ```ts:line-numbers [theme.ts]
-import lume from "lume/mod.ts";
-import foundatio from "jsr:@foundatiofx/lume-theme";
+import lume from "@lumeland/lume";
+import foundatio from "@foundatiofx/lume-theme";
 
 // Keep theme setup in Lume config.
 const site = lume({ prettyUrls: true });
@@ -187,8 +189,8 @@ A code group with one file should still keep the same tab and block chrome.
 ::: code-group
 
 ```ts:line-numbers [single.config.ts]
-import lume from "lume/mod.ts";
-import foundatio from "jsr:@foundatiofx/lume-theme";
+import lume from "@lumeland/lume";
+import foundatio from "@foundatiofx/lume-theme";
 
 const site = lume({ prettyUrls: true });
 site.use(foundatio({ title: "Single File Group" }));
@@ -197,6 +199,20 @@ export default site;
 ```
 
 :::
+
+## Authoring
+
+GitHub-style alerts render as the same custom blocks:
+
+> [!NOTE]
+> Alerts work in plain markdown, so READMEs and docs can share content.
+
+Code snippets import a region of a file and can highlight lines:
+
+<<< @/_snippets/theme-setup.ts#setup{2}
+
+<!--@include: @/_parts/shared-note.md#shared-content-->
+
 ## Tables
 
 | Feature          | Output                             | Notes                         |
