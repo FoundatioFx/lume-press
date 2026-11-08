@@ -37,7 +37,7 @@ $ vp run docs:serve # serve the LumePress build
 $ vp run compare:vitepress
 ```
 
-The only expected difference today is the space after "Last updated:", which VitePress's current alpha drops.
+Every view should match. Text that the two render differently shows up in the report as a diff.
 
 ## Upgrading VitePress
 

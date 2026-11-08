@@ -14,7 +14,7 @@ let root = "";
 let page = "";
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), "lume-theme-authoring-"));
+  root = mkdtempSync(join(tmpdir(), "lume-press-authoring-"));
   mkdirSync(join(root, "guide"));
   page = join(root, "guide", "page.md");
   writeFileSync(

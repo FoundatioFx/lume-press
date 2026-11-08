@@ -123,7 +123,7 @@ function renderDocFooter(options: {
     theme.lastUpdated && data.lastUpdated !== false && data.lastUpdatedDate
       ? `<div class="last-updated"><p class="VPLastUpdated"><bdi>${escapeHtml(
           theme.lastUpdated.text,
-        )}:</bdi> <time dir="auto" datetime="${data.lastUpdatedDate.toISOString()}">${escapeHtml(
+        )}:</bdi><time dir="auto" datetime="${data.lastUpdatedDate.toISOString()}">${escapeHtml(
           new Intl.DateTimeFormat(data.lang ?? theme.lang, {
             dateStyle: "medium",
             timeStyle: "medium",

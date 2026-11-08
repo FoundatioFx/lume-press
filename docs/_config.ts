@@ -54,11 +54,11 @@ site.use(
             items: [
               {
                 text: "Releases",
-                link: "https://github.com/FoundatioFx/lume-theme/releases",
+                link: "https://github.com/FoundatioFx/lume-press/releases",
               },
               {
                 text: "Issues",
-                link: "https://github.com/FoundatioFx/lume-theme/issues",
+                link: "https://github.com/FoundatioFx/lume-press/issues",
               },
             ],
           },
@@ -68,7 +68,7 @@ site.use(
     social: [
       {
         label: "GitHub",
-        link: "https://github.com/FoundatioFx/lume-theme",
+        link: "https://github.com/FoundatioFx/lume-press",
         icon: "github",
       },
       {
@@ -82,7 +82,7 @@ site.use(
       copyright: "Copyright 2026 Foundatio",
     },
     editLink: {
-      pattern: "https://github.com/FoundatioFx/lume-theme/edit/main/docs/:path",
+      pattern: "https://github.com/FoundatioFx/lume-press/edit/main/docs/:path",
     },
     lastUpdated: { git: true },
     codeHighlight: {

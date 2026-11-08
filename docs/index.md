@@ -19,7 +19,7 @@ hero:
       link: /guide/what-is-lumepress
     - theme: alt
       text: View on GitHub
-      link: https://github.com/FoundatioFx/lume-theme
+      link: https://github.com/FoundatioFx/lume-press
 features:
   - icon:
       src: /icons/vitepress.svg
